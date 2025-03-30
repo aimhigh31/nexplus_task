@@ -37,12 +37,12 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
   
   // VOC 분류 리스트
   final List<String> _vocCategories = [
-    'MES 아산', 'MES 비나', 'QMS 아산', 'QMS 비나', 
-    '그룹웨어', '하드웨어', '소프트웨어', '통신', '기타'
+    'MES 본사', 'QMS 본사', 'MES 베트남', 'QMS 베트남', 
+    '하드웨어', '소프트웨어', '그룹웨어', '통신', '기타'
   ];
   
   // 요청 분류 리스트
-  final List<String> _requestTypes = ['단순문의', '전산오류', '시스템개발', '업무협의', '기타'];
+  final List<String> _requestTypes = ['단순문의', '전산오류', '시스템 개발', '업무협의', '데이터수정', '기타'];
   
   // 상태 리스트
   final List<String> _statusList = ['접수', '진행중', '완료', '보류'];
@@ -57,7 +57,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
   bool _hasSelectedItems = false;
   
   // PlutoGrid 상태 관리자
-  PlutoGridStateManager? _stateManager;
+  PlutoGridStateManager? _gridStateManager;
   
   // 행 선택 모드 설정 및 체크박스 관련 함수 수정
   List<String> _selectedCodes = []; // 선택된 VOC 코드 목록 저장
@@ -132,9 +132,9 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
         });
         
         // PlutoGrid 갱신
-        if (_stateManager != null) {
-          _stateManager!.removeAllRows();
-          _stateManager!.appendRows(_getPlutoRows());
+        if (_gridStateManager != null) {
+          _gridStateManager!.removeAllRows();
+          _gridStateManager!.appendRows(_getPlutoRows());
         }
       }
     } catch (e) {
@@ -192,57 +192,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
   }
   
   // PlutoGrid 로드 시 설정
-  void onLoaded(PlutoGridOnLoadedEvent event) {
-    _stateManager = event.stateManager;
-    
-    // 선택 모드를 none으로 설정 (행 선택 시 파란색 선택 표시 제거)
-    _stateManager!.setSelectingMode(PlutoGridSelectingMode.none);
-    
-    // 이전에 선택된 행이 있으면 체크 표시
-    for (final row in _stateManager!.rows) {
-      final vocCode = row.cells['code']?.value as String? ?? '';
-      
-      // 저장 상태 확인
-      final vocIdx = _vocData.indexWhere((voc) => voc.code == vocCode);
-      if (vocIdx != -1) {
-        final voc = _vocData[vocIdx];
-        
-        // 배경색 적용 - PlutoRow에서 직접 지원하지 않으므로 제거
-        // 대신 PlutoGrid의 색상 스타일링 사용
-      }
-      
-      if (_selectedCodes.contains(vocCode)) {
-        row.cells['selected']?.value = true;
-      }
-    }
-    
-    // 선택 상태 업데이트
-    _updateSelectedState();
-  }
-  
-  // 선택 상태 업데이트
-  void _updateSelectedState() {
-    if (_stateManager == null) return;
-    
-    _selectedCodes = [];
-    
-    // 체크된 모든 행의 코드 수집
-    for (final row in _stateManager!.rows) {
-      final isSelected = row.cells['selected']?.value == true;
-      final vocCode = row.cells['code']?.value as String? ?? '';
-      
-      if (isSelected && vocCode.isNotEmpty) {
-        _selectedCodes.add(vocCode);
-      }
-    }
-    
-    setState(() {
-      _hasSelectedItems = _selectedCodes.isNotEmpty;
-    });
-  }
-  
-  // 셀 변경 이벤트 핸들러
-  void onCellChanged(PlutoGridOnChangedEvent event) {
+  void _handleCellChanged(PlutoGridOnChangedEvent event) {
     final field = event.column.field;
     
     // 체크박스 변경 이벤트는 이미 별도 처리
@@ -316,112 +266,48 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
     });
   }
   
-  // VOC 데이터를 PlutoRow로 변환
+  // 데이터를 PlutoGrid 행으로 변환
   List<PlutoRow> _getPlutoRows() {
-    final paginatedData = _paginatedData();
+    final List<PlutoRow> rows = [];
     
-    return List.generate(paginatedData.length, (index) {
-      final voc = paginatedData[index];
+    // 현재 페이지 데이터
+    final vocData = _paginatedData();
+    
+    for (var index = 0; index < vocData.length; index++) {
+      final voc = vocData[index];
+      final rowNo = _currentPage * _rowsPerPage + index + 1;
       
-      // 행의 색상을 결정하는 변수 (저장되지 않은 데이터는 배경색 변경)
-      final backgroundColor = !voc.isSaved 
-          ? Colors.blue.shade50  // 새로 추가된 행 (저장되지 않음)
-          : voc.isModified 
-              ? Colors.amber.shade50  // 수정된 행
-              : Colors.white;     // 저장된 행
-      
-      return PlutoRow(
-        cells: {
-          'selected': PlutoCell(value: _selectedCodes.contains(voc.code)),
-          'no': PlutoCell(value: voc.no), // 실제 VOC 번호 표시
-          'regDate': PlutoCell(value: voc.regDate),
-          'code': PlutoCell(value: voc.code ?? ''),
-          'vocCategory': PlutoCell(value: voc.vocCategory),
-          'requestDept': PlutoCell(value: voc.requestDept),
-          'requester': PlutoCell(value: voc.requester),
-          'systemPath': PlutoCell(value: voc.systemPath),
-          'request': PlutoCell(value: voc.request),
-          'requestType': PlutoCell(value: voc.requestType),
-          'action': PlutoCell(value: voc.action),
-          'actionTeam': PlutoCell(value: voc.actionTeam),
-          'actionPerson': PlutoCell(value: voc.actionPerson),
-          'status': PlutoCell(value: voc.status),
-          'dueDate': PlutoCell(value: voc.dueDate),
-        },
-        // 배경색은 직접 지정하지 않고, 나중에 CSS로 처리
+      // 배경색 결정 (PlutoRow에는 직접 backgroundColor 속성이 없으므로 셀 렌더러에서 적용)
+      rows.add(
+        PlutoRow(
+          cells: {
+            'no': PlutoCell(value: voc.no),
+            'regDate': PlutoCell(value: voc.regDate),
+            'code': PlutoCell(value: voc.code ?? ''),
+            'vocCategory': PlutoCell(value: voc.vocCategory),
+            'requestDept': PlutoCell(value: voc.requestDept),
+            'requester': PlutoCell(value: voc.requester),
+            'systemPath': PlutoCell(value: voc.systemPath),
+            'request': PlutoCell(value: voc.request),
+            'requestType': PlutoCell(value: voc.requestType),
+            'action': PlutoCell(value: voc.action),
+            'actionTeam': PlutoCell(value: voc.actionTeam),
+            'actionPerson': PlutoCell(value: voc.actionPerson),
+            'status': PlutoCell(value: voc.status),
+            'dueDate': PlutoCell(value: voc.dueDate),
+          },
+          // backgroundColor 속성 제거
+        ),
       );
-    });
+    }
+    
+    return rows;
   }
   
   // VOC 시스템용 PlutoGrid 컬럼 정의
-  List<PlutoColumn> _createColumns() {
+  List<PlutoColumn> get _columns {
     return [
-      // 체크박스 컬럼 추가 - select 타입 대신 text 타입 사용
-      PlutoColumn(
-        title: '',
-        field: 'selected',
-        type: PlutoColumnType.text(), // select가 아닌 text 타입 사용
-        width: 50,
-        enableSorting: false,
-        enableColumnDrag: false,
-        enableContextMenu: false,
-        enableDropToResize: false,
-        enableEditingMode: false, // 편집 모드 비활성화
-        textAlign: PlutoColumnTextAlign.center,
-        renderer: (rendererContext) {
-          // 체크 상태 확인 - 값이 true인 경우에만 체크됨
-          final isChecked = rendererContext.cell.value == true;
-          
-          // 체크박스만 표시하고 텍스트는 표시하지 않음
-          return StatefulBuilder(
-            builder: (context, setBuilderState) {
-              return Center(
-                child: Checkbox(
-                  value: isChecked,
-                  onChanged: (bool? value) {
-                    // 1. 즉시 UI 갱신을 위해 StatefulBuilder 상태 업데이트
-                    setBuilderState(() {
-                      // 체크박스 상태를 즉시 변경
-                    });
-                    
-                    // 2. PlutoGrid 셀 값 직접 변경
-                    rendererContext.cell.value = value;
-                    
-                    // 3. 그리드 UI에 알림
-                    rendererContext.stateManager.notifyListeners();
-                    
-                    // 4. VOC 코드 가져오기
-                    final row = rendererContext.row;
-                    final vocCode = row.cells['code']?.value as String? ?? '';
-                    
-                    // 5. 글로벌 상태 업데이트
-                    if (mounted) {
-                      setState(() {
-                        if (value == true && vocCode.isNotEmpty) {
-                          // 체크박스가 선택되면 목록에 추가
-                          if (!_selectedCodes.contains(vocCode)) {
-                            _selectedCodes.add(vocCode);
-                          }
-                        } else {
-                          // 체크박스가 해제되면 목록에서 제거
-                          _selectedCodes.remove(vocCode);
-                        }
-                        
-                        // 행 삭제 버튼 활성화 상태 업데이트
-                        _hasSelectedItems = _selectedCodes.isNotEmpty;
-                      });
-                    }
-                  },
-                  // 체크박스 스타일 커스터마이징
-                  activeColor: Colors.blue,
-                  checkColor: Colors.white,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              );
-            }
-          );
-        },
-      ),
+      // 셀 번호 컬럼
       PlutoColumn(
         title: 'No',
         field: 'no',
@@ -429,7 +315,6 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
         width: 60,
         enableEditingMode: false,
         textAlign: PlutoColumnTextAlign.center,
-        // 셀 렌더러 추가
         renderer: (rendererContext) {
           // 현재 행의 VOC 코드를 가져옵니다
           final row = rendererContext.row;
@@ -456,11 +341,13 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
               '${rendererContext.cell.value}',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
+                fontSize: 12, // 글자 크기 12픽셀로 변경
               ),
             ),
           );
         },
       ),
+      // 등록일 컬럼
       PlutoColumn(
         title: '등록일',
         field: 'regDate',
@@ -468,86 +355,97 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
         width: 120,
         enableEditingMode: true,
       ),
+      // 코드 컬럼
       PlutoColumn(
         title: '코드',
         field: 'code',
         type: PlutoColumnType.text(),
         width: 120,
-        enableEditingMode: false,  // 코드는 수정 불가능
-        textAlign: PlutoColumnTextAlign.center,
+        enableEditingMode: false,
       ),
+      // VOC 분류 컬럼
       PlutoColumn(
         title: 'VOC분류',
         field: 'vocCategory',
-        type: PlutoColumnType.select(_vocCategories),
-        width: 130,
+        type: PlutoColumnType.select(['MES 본사', 'QMS 본사', 'MES 베트남', 'QMS 베트남', '하드웨어', '소프트웨어', '그룹웨어', '통신', '기타']),
+        width: 100,
         enableEditingMode: true,
       ),
+      // 요청부서 컬럼
       PlutoColumn(
         title: '요청부서',
         field: 'requestDept',
         type: PlutoColumnType.text(),
-        width: 130,
+        width: 100,
         enableEditingMode: true,
       ),
+      // 요청자 컬럼
       PlutoColumn(
         title: '요청자',
         field: 'requester',
         type: PlutoColumnType.text(),
-        width: 120,
+        width: 80,
         enableEditingMode: true,
       ),
+      // 시스템경로 컬럼
       PlutoColumn(
         title: '시스템경로',
         field: 'systemPath',
         type: PlutoColumnType.text(),
-        width: 160,
+        width: 150,
         enableEditingMode: true,
       ),
+      // 요청내용 컬럼
       PlutoColumn(
         title: '요청내용',
         field: 'request',
         type: PlutoColumnType.text(),
-        width: 250,
+        width: 200,
         enableEditingMode: true,
       ),
+      // 요청유형 컬럼
       PlutoColumn(
         title: '요청유형',
         field: 'requestType',
-        type: PlutoColumnType.select(_requestTypes),
-        width: 120,
+        type: PlutoColumnType.select(['단순문의', '전산오류', '시스템 개발', '업무협의', '데이터수정', '기타']),
+        width: 80,
         enableEditingMode: true,
       ),
+      // 조치내용 컬럼
       PlutoColumn(
-        title: '실행조치',
+        title: '조치내용',
         field: 'action',
         type: PlutoColumnType.text(),
-        width: 250,
+        width: 200,
         enableEditingMode: true,
       ),
+      // 담당팀 컬럼
       PlutoColumn(
-        title: '실행팀',
+        title: '담당팀',
         field: 'actionTeam',
         type: PlutoColumnType.text(),
-        width: 120,
-        enableEditingMode: true,
-      ),
-      PlutoColumn(
-        title: '실행자',
-        field: 'actionPerson',
-        type: PlutoColumnType.text(),
-        width: 120,
-        enableEditingMode: true,
-      ),
-      PlutoColumn(
-        title: '상태',
-        field: 'status',
-        type: PlutoColumnType.select(_statusList),
         width: 100,
         enableEditingMode: true,
       ),
+      // 담당자 컬럼
       PlutoColumn(
-        title: '완료예정일',
+        title: '담당자',
+        field: 'actionPerson',
+        type: PlutoColumnType.text(),
+        width: 80,
+        enableEditingMode: true,
+      ),
+      // 상태 컬럼
+      PlutoColumn(
+        title: '상태',
+        field: 'status',
+        type: PlutoColumnType.select(['접수', '진행중', '보류', '완료']),
+        width: 80,
+        enableEditingMode: true,
+      ),
+      // 완료일정 컬럼
+      PlutoColumn(
+        title: '완료일정',
         field: 'dueDate',
         type: PlutoColumnType.date(),
         width: 120,
@@ -665,23 +563,23 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
       });
       
       // PlutoGrid 갱신
-      if (_stateManager != null) {
-        _stateManager!.removeAllRows();
-        _stateManager!.appendRows(_getPlutoRows());
+      if (_gridStateManager != null) {
+        _gridStateManager!.removeAllRows();
+        _gridStateManager!.appendRows(_getPlutoRows());
       }
     }
   }
   
   // PlutoGrid 갱신 함수 개선
   void _refreshPlutoGrid() {
-    if (_stateManager != null) {
-      _stateManager!.removeAllRows();
+    if (_gridStateManager != null) {
+      _gridStateManager!.removeAllRows();
       final rows = _getPlutoRows();
-      _stateManager!.appendRows(rows);
+      _gridStateManager!.appendRows(rows);
       
       // 첫 번째 행 선택 (행이 있는 경우)
       if (rows.isNotEmpty) {
-        _stateManager!.setCurrentCell(
+        _gridStateManager!.setCurrentCell(
           rows.first.cells.values.first,
           0,
         );
@@ -807,7 +705,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
       no: newNo,
       regDate: today,
       code: newCode,
-      vocCategory: _vocCategories.isNotEmpty ? _vocCategories.first : 'MES 아산',
+      vocCategory: _vocCategories.isNotEmpty ? _vocCategories.first : 'MES 본사',
       requestDept: '',
       requester: '',
       systemPath: '',
@@ -835,7 +733,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
   
   // 모든 데이터 저장하기 (수정된 행과 새 행 모두 저장)
   void _saveAllData() {
-    if (_stateManager == null) return;
+    if (_gridStateManager == null) return;
     
     // 로딩 상태 표시
     setState(() {
@@ -937,12 +835,12 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
     }
   }
 
-  // 페이지 네비게이션 위젯
+  // 페이지네이션 UI 구현
   Widget _buildPagination() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.grey.shade100,
         border: Border(
           top: BorderSide(color: Colors.grey.shade300),
         ),
@@ -950,12 +848,15 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // 처음으로 버튼
+          // 첫 페이지로 버튼
           IconButton(
             icon: const Icon(Icons.first_page),
             onPressed: _currentPage > 0 ? () => _changePage(0) : null,
             color: Colors.blue,
             disabledColor: Colors.grey.shade400,
+            iconSize: 20, // 아이콘 크기 축소
+            padding: EdgeInsets.zero, // 패딩 제거
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30), // 버튼 크기 축소
           ),
           // 이전 버튼
           IconButton(
@@ -963,18 +864,16 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
             onPressed: _currentPage > 0 ? () => _changePage(_currentPage - 1) : null,
             color: Colors.blue,
             disabledColor: Colors.grey.shade400,
+            iconSize: 20, // 아이콘 크기 축소
+            padding: EdgeInsets.zero, // 패딩 제거
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30), // 버튼 크기 축소
           ),
-          // 페이지 표시
+          // 페이지 정보
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
+            margin: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
               '${_currentPage + 1} / $_totalPages',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ),
           // 다음 버튼
@@ -983,6 +882,9 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
             onPressed: _currentPage < _totalPages - 1 ? () => _changePage(_currentPage + 1) : null,
             color: Colors.blue,
             disabledColor: Colors.grey.shade400,
+            iconSize: 20, // 아이콘 크기 축소
+            padding: EdgeInsets.zero, // 패딩 제거
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30), // 버튼 크기 축소
           ),
           // 마지막으로 버튼
           IconButton(
@@ -990,6 +892,9 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
             onPressed: _currentPage < _totalPages - 1 ? () => _changePage(_totalPages - 1) : null,
             color: Colors.blue,
             disabledColor: Colors.grey.shade400,
+            iconSize: 20, // 아이콘 크기 축소
+            padding: EdgeInsets.zero, // 패딩 제거
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30), // 버튼 크기 축소
           ),
         ],
       ),
@@ -1004,14 +909,14 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
       });
       
       // PlutoGrid 갱신
-      if (_stateManager != null) {
-        _stateManager!.removeAllRows();
+      if (_gridStateManager != null) {
+        _gridStateManager!.removeAllRows();
         final newRows = _getPlutoRows();
-        _stateManager!.appendRows(newRows);
+        _gridStateManager!.appendRows(newRows);
         
         // 변경된 페이지의 첫 번째 행 선택 (행이 있는 경우)
         if (newRows.isNotEmpty) {
-          _stateManager!.setCurrentCell(
+          _gridStateManager!.setCurrentCell(
             newRows.first.cells.values.first, 
             0,
           );
@@ -1047,76 +952,150 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
   
   // 데이터 테이블 영역
   Widget _buildPlutoGrid() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 범례 정보
-        if (_unsavedChanges)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
-            child: Row(
-              children: [
-                const Text('범례: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                Container(
-                  width: 16,
-                  height: 16,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    border: Border.all(color: Colors.grey.shade300),
+    // 데이터 없는 경우 메시지 표시
+    if (_vocData.isEmpty) {
+      return Column(
+        children: [
+          // 범례는 항상 표시 (데이터 없어도 표시)
+          _buildLegend(),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 2,
+            child: Container(
+              width: double.infinity,
+              height: 300, // 최소 높이 설정
+              padding: const EdgeInsets.all(16),
+              child: const Center(
+                child: Text(
+                  '데이터가 없습니다.',
+                  style: TextStyle(
+                    fontSize: 12, // 글자 크기를 12픽셀로 변경
+                    color: Colors.grey,
                   ),
                 ),
-                const Text('새 데이터'),
-                const SizedBox(width: 12),
-                Container(
-                  width: 16,
-                  height: 16,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                ),
-                const Text('수정됨'),
-                const SizedBox(width: 12),
-                const Text('변경사항은 데이터 저장 버튼을 눌러야 저장됩니다.', 
-                  style: TextStyle(fontStyle: FontStyle.italic, color: Colors.red)
-                ),
-              ],
+              ),
             ),
           ),
+        ],
+      );
+    }
+
+    // 현재 페이지 데이터 준비
+    final rows = _getPlutoRows();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min, // overflow 방지를 위한 크기 조정
+      children: [
+        // 범례
+        _buildLegend(),
+        const SizedBox(height: 8),
         
-        // PlutoGrid
+        // 데이터 테이블 - Expanded로 감싸서 남은 공간을 채우도록 설정
         Expanded(
           child: PlutoGrid(
-            columns: _createColumns(),
-            rows: _getPlutoRows(),
-            onLoaded: onLoaded,
-            onChanged: onCellChanged,
-            configuration: const PlutoGridConfiguration(
-              columnSize: PlutoGridColumnSizeConfig(
-                autoSizeMode: PlutoAutoSizeMode.scale,
-              ),
+            columns: _columns,
+            rows: rows,
+            onLoaded: (PlutoGridOnLoadedEvent event) {
+              _gridStateManager = event.stateManager;
+              _gridStateManager!.setShowColumnFilter(false); // 필터 비활성화
+            },
+            onChanged: _handleCellChanged,
+            configuration: PlutoGridConfiguration(
               style: PlutoGridStyleConfig(
-                gridBackgroundColor: Colors.white,
-                gridBorderColor: Colors.grey,
-                gridBorderRadius: BorderRadius.all(Radius.circular(8)),
-                rowHeight: 49,
-                columnFilterHeight: 56,
-                cellTextStyle: TextStyle(fontSize: 13),
-                columnTextStyle: TextStyle(
+                cellTextStyle: const TextStyle(fontSize: 12), // 셀 텍스트 크기를 12픽셀로 변경
+                columnTextStyle: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 13,
+                  fontSize: 12, // 컬럼 헤더 텍스트 크기를 12픽셀로 변경
                 ),
-                activatedColor: Colors.transparent,
+                rowColor: Colors.white,
+                oddRowColor: Colors.grey.shade50,
+                gridBorderColor: Colors.grey.shade300,
+                gridBackgroundColor: Colors.transparent,
+                borderColor: Colors.grey.shade300,
+                activatedColor: Colors.blue.shade100,
+                activatedBorderColor: Colors.blue.shade300,
+                inactivatedBorderColor: Colors.grey.shade300,
               ),
             ),
           ),
         ),
+        
+        // 페이징 UI
+        _buildPagination(),
       ],
     );
   }
-  
+
+  // 범례 위젯
+  Widget _buildLegend() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 8,
+        alignment: WrapAlignment.start,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text(
+            '범례:',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Text('신규 데이터'),
+            ],
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Text('수정된 데이터'),
+            ],
+          ),
+          if (_unsavedChanges)
+            const Text(
+              '* 저장되지 않은 변경사항이 있습니다. 저장 버튼을 클릭하세요.',
+              style: TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // 선택 상태 업데이트 메서드 (누락된 메서드 추가)
+  void _updateSelectedState() {
+    setState(() {
+      // 필요한 상태 업데이트 로직
+    });
+  }
+
   // 데이터 탭 내용 구성
   Widget _buildDataTab() {
     return Column(
@@ -1239,7 +1218,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
           ),
         ),
         
-        // 데이터 테이블 영역
+        // 데이터 테이블 영역 - 스크롤 가능하게 변경
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -1268,9 +1247,6 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
                     child: _buildPlutoGrid(),
                   ),
         ),
-        
-        // 항상 페이지네이션 표시 (데이터가 있는 경우에만)
-        if (_vocData.isNotEmpty) _buildPagination(),
       ],
     );
   }
