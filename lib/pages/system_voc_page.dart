@@ -5,6 +5,11 @@ import '../models/voc_model.dart';
 import '../services/api_service.dart';
 import 'dashboard_page.dart';
 import 'dart:async';
+import 'package:excel/excel.dart' hide Border, BorderStyle;
+import 'package:file_picker/file_picker.dart';
+import 'package:file_saver/file_saver.dart';
+import 'dart:typed_data';
+import 'dart:io';
 
 class SystemVocPage extends StatefulWidget {
   const SystemVocPage({super.key});
@@ -281,6 +286,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
       rows.add(
         PlutoRow(
           cells: {
+            'selected': PlutoCell(value: _selectedCodes.contains(voc.code)),
             'no': PlutoCell(value: voc.no),
             'regDate': PlutoCell(value: voc.regDate),
             'code': PlutoCell(value: voc.code ?? ''),
@@ -307,6 +313,26 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
   // VOC 시스템용 PlutoGrid 컬럼 정의
   List<PlutoColumn> get _columns {
     return [
+      // 선택 컬럼(체크박스)
+      PlutoColumn(
+        title: '',
+        field: 'selected',
+        type: PlutoColumnType.text(),
+        width: 40,
+        enableEditingMode: false, // 수정 불가능하게 설정
+        textAlign: PlutoColumnTextAlign.center,
+        renderer: (rendererContext) {
+          return Center(
+            child: Checkbox(
+              value: rendererContext.cell.value as bool? ?? false,
+              onChanged: (value) {
+                _toggleRowSelection(rendererContext.rowIdx);
+              },
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          );
+        },
+      ),
       // 셀 번호 컬럼
       PlutoColumn(
         title: 'No',
@@ -594,7 +620,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
   Widget _buildHeaderActions() {
     return Row(
       children: [
-        // 행 추가 버튼
+        // 1. 행 추가 버튼
         Padding(
           padding: const EdgeInsets.only(right: 8.0),
           child: ElevatedButton.icon(
@@ -607,7 +633,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
             ),
           ),
         ),
-        // 데이터 저장 버튼
+        // 2. 데이터 저장 버튼
         Padding(
           padding: const EdgeInsets.only(right: 8.0),
           child: ElevatedButton.icon(
@@ -632,20 +658,106 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
             ),
           ),
         ),
-        // 행 삭제 버튼
+        // 3. 행 삭제 버튼
+        Padding(
+          padding: const EdgeInsets.only(right: 8.0),
+          child: ElevatedButton.icon(
+            onPressed: _hasSelectedItems ? _deleteSelectedRows : null,
+            icon: const Icon(Icons.delete_outline),
+            label: Text('행 삭제${_hasSelectedItems ? ' (${_selectedCodes.length})' : ''}'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.red.withOpacity(0.3),
+              disabledForegroundColor: Colors.black,
+            ),
+          ),
+        ),
+        // 4. 엑셀 내보내기 버튼
+        Padding(
+          padding: const EdgeInsets.only(right: 8.0),
+          child: ElevatedButton.icon(
+            onPressed: _exportToExcel,
+            icon: const Icon(Icons.file_download, color: Colors.white),
+            label: const Text('엑셀 다운로드', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ),
+        // 5. 엑셀 가져오기 버튼
         ElevatedButton.icon(
-          onPressed: _hasSelectedItems ? _deleteSelectedRows : null,
-          icon: const Icon(Icons.delete_outline),
-          label: Text('행 삭제${_hasSelectedItems ? ' (${_selectedCodes.length})' : ''}'),
+          onPressed: _showAdminPasswordDialog,
+          icon: const Icon(Icons.file_upload, color: Colors.white),
+          label: const Text('엑셀 업로드', style: TextStyle(color: Colors.white)),
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
+            backgroundColor: Colors.orange,
             foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.red.withOpacity(0.3),
-            disabledForegroundColor: Colors.black,
           ),
         ),
       ],
     );
+  }
+
+  // 관리자 암호 확인 다이얼로그 표시
+  Future<void> _showAdminPasswordDialog() async {
+    final passwordController = TextEditingController();
+    
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('관리자 확인', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('주의: 데이터가 덮어쓰기 됩니다 (이전 데이터 소실 가능)'),
+            const SizedBox(height: 16),
+            const Text('진행하려면 관리자 암호를 입력하세요:'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: passwordController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '관리자 암호 입력',
+              ),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final password = passwordController.text.trim();
+              Navigator.of(context).pop(password == 'RISK1234');
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+    
+    if (result == true) {
+      // 암호가 맞으면 엑셀 가져오기 기능 실행
+      _importFromExcel();
+    } else if (result == false) {
+      // 취소했거나 암호가 틀린 경우
+      if (passwordController.text.isNotEmpty && passwordController.text != 'RISK1234') {
+        // 암호가 틀린 경우에만 메시지 표시
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('관리자 암호가 일치하지 않습니다.')),
+        );
+      }
+    }
+    
+    passwordController.dispose();
   }
 
   // 빈 행 추가 기능 - 프론트엔드에서만 임시 처리하도록 수정
@@ -832,6 +944,298 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
         debugPrint('VOC 업데이트 중 오류 발생 - No: ${voc.no}, 오류: $error');
         checkCompletion();
       });
+    }
+  }
+
+  // Excel 내보내기 함수
+  Future<void> _exportToExcel() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      // Excel 생성
+      final excel = Excel.createExcel();
+      final sheet = excel.sheets.values.first;
+      
+      // 헤더 행 추가
+      final headers = [
+        'No', '등록일', 'VOC 코드', 'VOC분류', '요청부서', '요청자', 
+        '시스템경로', '요청내용', '요청유형', '조치내용', '담당팀', 
+        '담당자', '상태', '완료일정'
+      ];
+      
+      for (var i = 0; i < headers.length; i++) {
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
+          ..value = TextCellValue(headers[i])
+          ..cellStyle = CellStyle(
+            bold: true, 
+            horizontalAlign: HorizontalAlign.Center,
+          );
+      }
+      
+      // 데이터 행 추가
+      final dateFormat = DateFormat('yyyy-MM-dd');
+      
+      for (var i = 0; i < _vocData.length; i++) {
+        final voc = _vocData[i];
+        final row = i + 1; // 0번 행은 헤더
+        
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row)).value = TextCellValue(voc.no.toString());
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row)).value = TextCellValue(dateFormat.format(voc.regDate));
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row)).value = TextCellValue(voc.code ?? '');
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row)).value = TextCellValue(voc.vocCategory);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row)).value = TextCellValue(voc.requestDept);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row)).value = TextCellValue(voc.requester);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: row)).value = TextCellValue(voc.systemPath);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: row)).value = TextCellValue(voc.request);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: row)).value = TextCellValue(voc.requestType);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: row)).value = TextCellValue(voc.action);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: row)).value = TextCellValue(voc.actionTeam);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: row)).value = TextCellValue(voc.actionPerson);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 12, rowIndex: row)).value = TextCellValue(voc.status);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 13, rowIndex: row)).value = TextCellValue(dateFormat.format(voc.dueDate));
+      }
+      
+      // 열 너비 조정
+      sheet.setColumnWidth(0, 10); // No
+      sheet.setColumnWidth(1, 15); // 등록일
+      sheet.setColumnWidth(2, 18); // VOC 코드
+      sheet.setColumnWidth(3, 15); // VOC 분류
+      sheet.setColumnWidth(4, 15); // 요청부서
+      sheet.setColumnWidth(5, 12); // 요청자
+      sheet.setColumnWidth(6, 20); // 시스템경로
+      sheet.setColumnWidth(7, 30); // 요청내용
+      sheet.setColumnWidth(8, 15); // 요청유형
+      sheet.setColumnWidth(9, 30); // 조치내용
+      sheet.setColumnWidth(10, 15); // 담당팀
+      sheet.setColumnWidth(11, 12); // 담당자
+      sheet.setColumnWidth(12, 10); // 상태
+      sheet.setColumnWidth(13, 15); // 완료일정
+      
+      // 엑셀 파일로 저장
+      final bytes = excel.save()!;
+      final currentDate = dateFormat.format(DateTime.now());
+      
+      // 파일 저장 대화 상자 표시
+      await FileSaver.instance.saveFile(
+        name: 'VOC_데이터_$currentDate', 
+        bytes: Uint8List.fromList(bytes),
+        ext: 'xlsx',
+        mimeType: MimeType.microsoftExcel
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('VOC 데이터가 엑셀로 내보내기 되었습니다.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('엑셀 내보내기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('엑셀 내보내기 중 오류가 발생했습니다: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+  
+  // Excel 가져오기 함수
+  Future<void> _importFromExcel() async {
+    try {
+      // 파일 선택
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+      );
+      
+      if (result == null || result.files.single.bytes == null) {
+        return; // 파일 선택 취소
+      }
+      
+      setState(() {
+        _isLoading = true;
+      });
+      
+      // 엑셀 파일 로드
+      final bytes = result.files.single.bytes!;
+      final excel = Excel.decodeBytes(bytes);
+      final sheet = excel.tables.keys.first;
+      
+      // 데이터 읽기
+      if (excel.tables[sheet] == null || excel.tables[sheet]!.rows.length <= 1) {
+        throw Exception('유효한 데이터가 없습니다.');
+      }
+      
+      final rows = excel.tables[sheet]!.rows;
+      final importedData = <VocModel>[];
+      final dateFormat = DateFormat('yyyy-MM-dd');
+      
+      // 첫 번째 행은 헤더로 처리
+      for (var i = 1; i < rows.length; i++) {
+        final row = rows[i];
+        
+        // 필수 필드 확인 (최소한 번호와 요청내용은 있어야 함)
+        if (row.isEmpty || row.length < 4 || row[0] == null || row[7] == null) {
+          continue;
+        }
+        
+        try {
+          final noStr = row[0]?.value?.toString() ?? '';
+          final no = int.tryParse(noStr) ?? 0;
+          
+          // 번호가 0 이하인 경우 스킵
+          if (no <= 0) continue;
+          
+          final regDateStr = row[1]?.value?.toString() ?? '';
+          DateTime regDate;
+          try {
+            regDate = dateFormat.parse(regDateStr);
+          } catch (_) {
+            regDate = DateTime.now();
+          }
+          
+          final dueDateStr = row[13]?.value?.toString() ?? '';
+          DateTime dueDate;
+          try {
+            dueDate = dateFormat.parse(dueDateStr);
+          } catch (_) {
+            dueDate = DateTime.now().add(const Duration(days: 7)); // 기본값: 1주일 후
+          }
+          
+          // VOC 모델 생성
+          final voc = VocModel(
+            no: no,
+            regDate: regDate,
+            code: row[2]?.value?.toString() ?? '',
+            vocCategory: row[3]?.value?.toString() ?? '기타',
+            requestDept: row[4]?.value?.toString() ?? '',
+            requester: row[5]?.value?.toString() ?? '',
+            systemPath: row[6]?.value?.toString() ?? '',
+            request: row[7]?.value?.toString() ?? '',
+            requestType: row[8]?.value?.toString() ?? '기타',
+            action: row[9]?.value?.toString() ?? '',
+            actionTeam: row[10]?.value?.toString() ?? '',
+            actionPerson: row[11]?.value?.toString() ?? '',
+            status: row[12]?.value?.toString() ?? '접수',
+            dueDate: dueDate,
+            isSaved: false,
+            isModified: true,
+          );
+          
+          importedData.add(voc);
+        } catch (e) {
+          debugPrint('행 $i 처리 중 오류: $e');
+          continue;
+        }
+      }
+      
+      if (importedData.isEmpty) {
+        throw Exception('가져올 수 있는 유효한 데이터가 없습니다.');
+      }
+      
+      // 사용자 확인 다이얼로그 표시
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('엑셀 데이터 가져오기'),
+          content: Text('${importedData.length}개의 항목을 가져왔습니다. 기존 데이터와 병합하시겠습니까?\n\n가져온 항목 중 같은 번호나 코드를 가진 항목은 덮어쓰기됩니다.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('확인'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirm != true) {
+        return; // 사용자가 취소함
+      }
+      
+      // 데이터 병합 (같은 번호/코드가 있으면 덮어쓰기)
+      final newData = List<VocModel>.from(_vocData);
+      
+      for (final importedVoc in importedData) {
+        int existingIndex = -1;
+        
+        // 코드로 찾기 (코드가 있는 경우)
+        if (importedVoc.code != null && importedVoc.code!.isNotEmpty) {
+          existingIndex = newData.indexWhere(
+            (voc) => voc.code == importedVoc.code
+          );
+        }
+        
+        // 번호로 찾기 (코드로 찾지 못한 경우)
+        if (existingIndex == -1) {
+          existingIndex = newData.indexWhere(
+            (voc) => voc.no == importedVoc.no
+          );
+        }
+        
+        if (existingIndex != -1) {
+          // 기존 항목 업데이트
+          newData[existingIndex] = importedVoc;
+        } else {
+          // 새 항목 추가
+          newData.add(importedVoc);
+        }
+      }
+      
+      // 데이터 업데이트 및 UI 갱신
+      setState(() {
+        _vocData = newData;
+        _unsavedChanges = true;
+        _totalPages = (_vocData.length / _rowsPerPage).ceil();
+        
+        // 정렬 (번호 역순)
+        _vocData.sort((a, b) => b.no.compareTo(a.no));
+        
+        // 현재 페이지가 유효한지 확인
+        if (_totalPages == 0) {
+          _currentPage = 0;
+        } else if (_currentPage >= _totalPages) {
+          _currentPage = _totalPages - 1;
+        }
+      });
+      
+      // 테이블 갱신
+      if (_gridStateManager != null) {
+        _gridStateManager!.removeAllRows();
+        _gridStateManager!.appendRows(_getPlutoRows());
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${importedData.length}개의 VOC 데이터를 가져왔습니다. 변경사항을 저장하려면 "데이터 저장" 버튼을 클릭하세요.'),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('엑셀 가져오기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('엑셀 가져오기 중 오류가 발생했습니다: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -1089,10 +1493,37 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
     );
   }
 
-  // 선택 상태 업데이트 메서드 (누락된 메서드 추가)
+  // 선택 행 토글 처리
+  void _toggleRowSelection(int rowIdx) {
+    if (rowIdx < 0 || rowIdx >= _paginatedData().length) return;
+    
+    final voc = _paginatedData()[rowIdx];
+    final code = voc.code;
+    
+    if (code == null || code.isEmpty) return;
+    
+    setState(() {
+      if (_selectedCodes.contains(code)) {
+        _selectedCodes.remove(code);
+      } else {
+        _selectedCodes.add(code);
+      }
+      
+      _hasSelectedItems = _selectedCodes.isNotEmpty;
+    });
+    
+    // 그리드 갱신
+    if (_gridStateManager != null) {
+      final rows = _getPlutoRows();
+      _gridStateManager!.removeAllRows();
+      _gridStateManager!.appendRows(rows);
+    }
+  }
+  
+  // 선택 상태 업데이트 메서드
   void _updateSelectedState() {
     setState(() {
-      // 필요한 상태 업데이트 로직
+      _hasSelectedItems = _selectedCodes.isNotEmpty;
     });
   }
 
