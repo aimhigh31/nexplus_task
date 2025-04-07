@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'pages/system_voc_page.dart';
+import 'pages/system_update_page.dart';
+import 'pages/hardware_management_page.dart';
+import 'pages/software_management_page.dart';
+import 'pages/equipment_connection_page.dart';
 import 'services/api_service.dart';
 import 'widgets/sidebar.dart';
 
@@ -60,10 +64,13 @@ class _MainLayoutState extends State<MainLayout> {
       case 'system_voc':
         return const SystemVocPage();
       case 'system_update':
-        // 시스템 업데이트 페이지는 아직 미구현
-        return const Center(
-          child: Text('시스템 업데이트 페이지 (준비 중)', style: TextStyle(fontSize: 24)),
-        );
+        return const SystemUpdatePage();
+      case 'hardware_management':
+        return const HardwareManagementPage();
+      case 'software_management':
+        return const SoftwareManagementPage();
+      case 'equipment_connection':
+        return const EquipmentConnectionPage();
       default:
         return const SystemVocPage();
     }

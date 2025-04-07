@@ -7,6 +7,7 @@ router.get('/', async (req, res) => {
   try {
     const { 
       search, 
+      detailSearch,
       vocCategory, 
       requestType, 
       status, 
@@ -29,6 +30,36 @@ router.get('/', async (req, res) => {
         { actionTeam: { $regex: search, $options: 'i' } },
         { actionPerson: { $regex: search, $options: 'i' } }
       ];
+    }
+    
+    // 세부내용 검색 필터링 (요청내용과 조치내용에서만 검색)
+    if (detailSearch) {
+      // 세부내용 검색은 요청내용과 조치내용 필드에서만 수행
+      if (!query.$or) {
+        query.$or = [];
+      }
+      
+      // 기존 $or 쿼리가 있는 경우, $and로 결합
+      if (search) {
+        const originalOr = query.$or;
+        query.$or = undefined; // 기존 $or 제거
+        
+        query.$and = [
+          { $or: originalOr },
+          { 
+            $or: [
+              { request: { $regex: detailSearch, $options: 'i' } },
+              { action: { $regex: detailSearch, $options: 'i' } }
+            ]
+          }
+        ];
+      } else {
+        // 기존 $or 쿼리가 없는 경우, 새로 생성
+        query.$or = [
+          { request: { $regex: detailSearch, $options: 'i' } },
+          { action: { $regex: detailSearch, $options: 'i' } }
+        ];
+      }
     }
     
     // VOC 분류 필터

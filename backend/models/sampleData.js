@@ -163,4 +163,52 @@ const getSampleVocData = () => {
   ];
 };
 
-module.exports = { getSampleVocData }; 
+// 샘플 시스템 업데이트 데이터 (솔루션 개발)
+function getSampleSystemUpdateData() {
+  const targetSystems = ['MES', 'QMS', 'PLM', 'SPC', 'MMS', 'KPI', '그룹웨어', '백업솔루션', '기타'];
+  const updateTypes = ['기능개선', '버그수정', '보안패치', 'UI변경', '데이터보정', '기타'];
+  const statusList = ['계획', '진행중', '테스트', '완료', '보류'];
+  
+  // 25개의 샘플 데이터 생성
+  return Array.from({ length: 25 }).map((_, index) => {
+    const now = new Date();
+    const regDate = new Date(now);
+    regDate.setDate(now.getDate() - index * 3);
+    
+    const status = statusList[index % statusList.length];
+    
+    // 업데이트 코드 생성 함수
+    const generateUpdateCode = (date, no) => {
+      const year = date.getFullYear().toString().substring(2);
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const yearMonth = `${year}${month}`;
+      const seq = no.toString().padStart(3, '0');
+      return `UPD${yearMonth}${seq}`;
+    };
+    
+    // 완료일 생성 (완료 상태인 경우에만)
+    let completionDate = null;
+    if (status === '완료') {
+      completionDate = new Date(regDate);
+      completionDate.setDate(regDate.getDate() + (index % 7) + 1);
+    }
+    
+    return {
+      no: 25 - index,
+      regDate: regDate,
+      updateCode: generateUpdateCode(regDate, 25 - index),
+      targetSystem: targetSystems[index % targetSystems.length],
+      description: `시스템 기능 개선 및 버그 수정 #${25 - index}. 사용성 향상을 위한 UI 변경 포함.`,
+      updateType: updateTypes[index % updateTypes.length],
+      assignee: `담당자${(index % 5) + 1}`,
+      status: status,
+      completionDate: completionDate,
+      remarks: (index % 4 === 0) ? '긴급 패치 필요' : '',
+    };
+  });
+}
+
+module.exports = {
+  getSampleVocData,
+  getSampleSystemUpdateData
+}; 

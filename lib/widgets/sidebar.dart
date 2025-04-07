@@ -53,15 +53,33 @@ class SideBar extends StatelessWidget {
                   // IT 하위 메뉴 항목들
                   _buildMenuItem(
                     'system_voc',
-                    'VOC',
+                    'VOC 관리',
                     Icons.feedback_outlined,
                     currentPage == 'system_voc',
                   ),
                   _buildMenuItem(
                     'system_update',
-                    '시스템 업데이트',
+                    '솔루션 개발',
                     Icons.update,
                     currentPage == 'system_update',
+                  ),
+                  _buildMenuItem(
+                    'hardware_management',
+                    '하드웨어 관리',
+                    Icons.computer,
+                    currentPage == 'hardware_management',
+                  ),
+                  _buildMenuItem(
+                    'software_management',
+                    '소프트웨어 관리',
+                    Icons.apps,
+                    currentPage == 'software_management',
+                  ),
+                  _buildMenuItem(
+                    'equipment_connection',
+                    '설비연동 관리',
+                    Icons.wifi_tethering,
+                    currentPage == 'equipment_connection',
                   ),
                 ],
               ),

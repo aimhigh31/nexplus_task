@@ -2,20 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../models/voc_model.dart';
-import '../services/api_service.dart';
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({Key? key}) : super(key: key);
+  final List<VocModel> vocData; // 전달받을 VOC 데이터
+
+  const DashboardPage({Key? key, required this.vocData}) : super(key: key);
 
   @override
   _DashboardPageState createState() => _DashboardPageState();
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  final ApiService _apiService = ApiService();
-  List<VocModel> _vocData = [];
-  bool _isLoading = true;
+  List<VocModel> _filteredVocData = []; // 필터링된 데이터 저장
+  bool _isLoading = false; // 로딩 상태는 외부에서 관리하므로 false로 초기화
   DateTime _selectedPeriodStart = DateTime.now().subtract(const Duration(days: 30));
   DateTime _selectedPeriodEnd = DateTime.now();
   
@@ -28,10 +28,40 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    _loadVocData();
+    // initState에서 데이터 로드 대신, 전달받은 데이터로 초기 필터링 및 차트 처리
+    _filterAndProcessData();
+  }
+
+  @override
+  void didUpdateWidget(covariant DashboardPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 상위 위젯에서 데이터가 변경되면 다시 필터링 및 차트 처리
+    if (widget.vocData != oldWidget.vocData) {
+      _filterAndProcessData();
+    }
   }
   
-  // VOC 데이터 로드
+  // 전달받은 데이터 필터링 및 차트 데이터 처리
+  void _filterAndProcessData() {
+    setState(() {
+      _isLoading = true; // 처리 시작 시 로딩 표시
+    });
+
+    // 선택된 기간으로 데이터 필터링
+    _filteredVocData = widget.vocData.where((voc) {
+      return !voc.regDate.isBefore(_selectedPeriodStart) && 
+             !voc.regDate.isAfter(_selectedPeriodEnd.add(const Duration(days: 1))); // endDate 포함
+    }).toList();
+
+    _processChartData();
+
+    setState(() {
+      _isLoading = false; // 처리 완료 시 로딩 해제
+    });
+  }
+
+  // VOC 데이터 로드 함수 제거 또는 주석 처리
+  /*
   Future<void> _loadVocData() async {
     setState(() {
       _isLoading = true;
@@ -61,10 +91,19 @@ class _DashboardPageState extends State<DashboardPage> {
       );
     }
   }
+  */
   
-  // 차트 데이터 처리
+  // 차트 데이터 처리 (필터링된 데이터 사용)
   void _processChartData() {
-    if (_vocData.isEmpty) return;
+    if (_filteredVocData.isEmpty) {
+      // 데이터가 없으면 차트 초기화
+      _categoryCount = {};
+      _requestTypeCount = {};
+      _statusCount = {};
+      _dailyCount = [];
+      setState(() {});
+      return;
+    }
     
     // 카운트 초기화
     _categoryCount = {};
@@ -72,8 +111,8 @@ class _DashboardPageState extends State<DashboardPage> {
     _statusCount = {};
     Map<String, int> dailyCountMap = {};
     
-    // 데이터 집계
-    for (final voc in _vocData) {
+    // 데이터 집계 (_filteredVocData 사용)
+    for (final voc in _filteredVocData) {
       // 1. VOC 분류별 카운트
       _categoryCount[voc.vocCategory] = (_categoryCount[voc.vocCategory] ?? 0) + 1;
       
@@ -95,10 +134,10 @@ class _DashboardPageState extends State<DashboardPage> {
     
     _dailyCount.sort((a, b) => a.key.compareTo(b.key));
     
-    setState(() {});
+    setState(() {}); // 차트 업데이트
   }
   
-  // 날짜 선택 다이얼로그
+  // 날짜 선택 다이얼로그 (선택 후 _filterAndProcessData 호출)
   Future<void> _selectDateRange() async {
     final initialDateRange = DateTimeRange(
       start: _selectedPeriodStart,
@@ -187,7 +226,7 @@ class _DashboardPageState extends State<DashboardPage> {
         _selectedPeriodStart = result.start;
         _selectedPeriodEnd = result.end;
       });
-      _loadVocData();
+      _filterAndProcessData(); // 날짜 변경 후 데이터 다시 필터링 및 처리
     }
   }
   
@@ -203,12 +242,12 @@ class _DashboardPageState extends State<DashboardPage> {
             tooltip: '기간 선택',
             onPressed: _selectDateRange,
           ),
-          // 새로고침 버튼
-          IconButton(
+          // 새로고침 버튼 제거 또는 다른 기능으로 대체 가능
+          /*IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '새로고침',
-            onPressed: _loadVocData,
-          ),
+            onPressed: () => _filterAndProcessData(), // 전달받은 데이터로 다시 처리
+          ),*/
         ],
       ),
       body: _isLoading 
@@ -217,279 +256,157 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
   
-  // 대시보드 빌드
+  // 대시보드 빌드 (필터링된 데이터 사용)
   Widget _buildDashboard() {
+    // _vocData 대신 _filteredVocData 사용하도록 KPI 카드 등 수정 필요
+    int totalVocInPeriod = _filteredVocData.length;
+    int completedVoc = _filteredVocData.where((voc) => voc.status == '완료').length;
+    double completionRate = totalVocInPeriod > 0 ? (completedVoc / totalVocInPeriod) * 100 : 0;
+    double avgProcessingDays = 0;
+    if (completedVoc > 0) {
+      final processingDays = _filteredVocData
+          .where((voc) => voc.status == '완료')
+          .map((voc) => voc.dueDate.difference(voc.regDate).inDays)
+          .toList();
+      avgProcessingDays = processingDays.reduce((a, b) => a + b) / completedVoc;
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // KPI 카드 행 (상단으로 이동)
+        // KPI 카드 행 (데이터 소스를 _filteredVocData로 변경)
         Row(
           children: [
-            // 연간 VOC
+            // 기간 내 총 VOC
             Expanded(
               child: _buildKpiCard(
-                '연간 VOC',
-                _vocData.where((voc) {
-                  final now = DateTime.now();
-                  final regDate = voc.regDate;
-                  return regDate.year == now.year;
-                }).length.toString(),
-                Colors.indigo,
-                Icons.calendar_today,
-              ),
-            ),
-            const SizedBox(width: 16),
-            // 이번 달 VOC
-            Expanded(
-              child: _buildKpiCard(
-                '이번 달 VOC',
-                _vocData.where((voc) {
-                  final now = DateTime.now();
-                  final regDate = voc.regDate;
-                  return regDate.year == now.year && regDate.month == now.month;
-                }).length.toString(),
+                '기간 내 총 VOC',
+                totalVocInPeriod.toString(),
                 Colors.blue,
-                Icons.date_range,
+                Icons.list_alt,
               ),
             ),
             const SizedBox(width: 16),
-            // 이번 주 VOC
+            // 완료 건수
             Expanded(
               child: _buildKpiCard(
-                '이번 주 VOC',
-                _vocData.where((voc) {
-                  final now = DateTime.now();
-                  final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-                  final startOfWeekDate = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
-                  return voc.regDate.isAfter(startOfWeekDate.subtract(const Duration(days: 1))) &&
-                         voc.regDate.isBefore(now.add(const Duration(days: 1)));
-                }).length.toString(),
+                '완료 건수',
+                completedVoc.toString(),
                 Colors.green,
-                Icons.view_week,
+                Icons.check_circle_outline,
               ),
             ),
             const SizedBox(width: 16),
-            // 당일 VOC
+            // 처리율
             Expanded(
               child: _buildKpiCard(
-                '당일 VOC',
-                _vocData.where((voc) {
-                  final today = DateTime.now();
-                  final regDate = voc.regDate;
-                  return regDate.year == today.year && 
-                         regDate.month == today.month && 
-                         regDate.day == today.day;
-                }).length.toString(),
+                '처리율',
+                '${completionRate.toStringAsFixed(1)}%',
                 Colors.orange,
-                Icons.today,
+                Icons.donut_large,
+              ),
+            ),
+            const SizedBox(width: 16),
+            // 평균 처리일
+            Expanded(
+              child: _buildKpiCard(
+                '평균 처리일',
+                '${avgProcessingDays.toStringAsFixed(1)}일',
+                Colors.red,
+                Icons.timelapse,
               ),
             ),
           ],
         ),
-        
-        const SizedBox(height: 16),
-        
-        // 기간 정보 (KPI 카드 행 아래로 이동)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '분석 기간',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.calendar_today, color: Colors.blue),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${DateFormat('yyyy년 MM월 dd일').format(_selectedPeriodStart)} ~ '
-                      '${DateFormat('yyyy년 MM월 dd일').format(_selectedPeriodEnd)}',
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                    const Spacer(),
-                    OutlinedButton(
-                      onPressed: _selectDateRange,
-                      child: const Text('기간 변경'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '총 VOC 수: ${_vocData.length}건',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
-                  ),
-                ),
-              ],
+        const SizedBox(height: 24),
+
+        // 차트 행 1 (분류별, 요청유형별)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // VOC 분류별 현황 (원형 차트)
+            Expanded(
+              child: _buildChartCard(
+                'VOC 분류별 현황',
+                _buildPieChart(_categoryCount, _getVocCategoryColors()),
+              ),
             ),
-          ),
+            const SizedBox(width: 16),
+            // 요청 유형별 현황 (막대 차트)
+            Expanded(
+              child: _buildChartCard(
+                '요청 유형별 현황',
+                _buildBarChart(_requestTypeCount, _getRequestTypeColors()),
+              ),
+            ),
+          ],
         ),
-        
-        const SizedBox(height: 16),
-        
-        // 상태별 현황 파이 차트와 진행 중/보류 테이블 행
-        if (_statusCount.isNotEmpty)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 상태별 현황 파이 차트 (좌측 50%)
-              Expanded(
-                flex: 1,
-                child: _buildChartCard(
-                  '상태별 현황',
-                  _buildCompactPieChart(_statusCount),
-                  Icons.pie_chart,
-                ),
+        const SizedBox(height: 24),
+
+        // 차트 행 2 (상태별, 일별 등록)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 상태별 현황 (원형 차트)
+            Expanded(
+              child: _buildChartCard(
+                '상태별 현황',
+                _buildPieChart(_statusCount, _getStatusColors()),
               ),
-              const SizedBox(width: 16),
-              // 진행 중/보류 VOC 테이블 (우측 50%)
-              Expanded(
-                flex: 1,
-                child: _buildPendingVocTable(),
+            ),
+            const SizedBox(width: 16),
+            // 일별 등록 현황 (라인 차트)
+            Expanded(
+              child: _buildChartCard(
+                '일별 등록 현황',
+                _buildLineChart(_dailyCount),
               ),
-            ],
-          ),
-        
-        const SizedBox(height: 16),
-        
-        // VOC 분류별 현황과 요청유형별 현황 차트 배치
-        if (_categoryCount.isNotEmpty && _requestTypeCount.isNotEmpty)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // VOC 분류별 현황 바 차트 (좌측 50%)
-              Expanded(
-                flex: 1,
-                child: Card(
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.bar_chart, color: Colors.blue),
-                            const SizedBox(width: 8),
-                            Text(
-                              'VOC 분류별 현황',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 200, // 높이 조정
-                          child: _buildBarChart(_categoryCount),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              // 요청유형별 현황 바 차트 (우측 50%)
-              Expanded(
-                flex: 1,
-                child: Card(
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.bar_chart, color: Colors.blue),
-                            const SizedBox(width: 8),
-                            Text(
-                              '요청유형별 현황',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 200, // 높이 조정
-                          child: _buildBarChart(_requestTypeCount),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          )
-        else if (_categoryCount.isNotEmpty)
-          _buildChartCard(
-            'VOC 분류별 현황',
-            _buildBarChart(_categoryCount),
-            Icons.bar_chart,
-          )
-        else if (_requestTypeCount.isNotEmpty)
-          _buildChartCard(
-            '요청유형별 현황',
-            _buildBarChart(_requestTypeCount),
-            Icons.bar_chart,
-          ),
-        
-        const SizedBox(height: 16),
-        
-        // 일별 VOC 추이 라인 차트
-        if (_dailyCount.isNotEmpty)
-          _buildChartCard(
-            '일별 VOC 등록 추이',
-            _buildLineChart(),
-            Icons.show_chart,
-          ),
+            ),
+          ],
+        ),
       ],
     );
   }
-  
+
   // KPI 카드 위젯
   Widget _buildKpiCard(String title, String value, Color color, IconData icon) {
     return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, color: color),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[700],
-                  ),
-                ),
-              ],
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: color.withOpacity(0.1),
+              child: Icon(icon, color: color, size: 28),
             ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: color,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14, 
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 20, 
+                      fontWeight: FontWeight.bold, 
+                      color: color
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],
@@ -497,486 +414,90 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
     );
   }
-  
+
   // 차트 카드 위젯
-  Widget _buildChartCard(String title, Widget chart, IconData icon) {
+  Widget _buildChartCard(String title, Widget chartWidget) {
     return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(icon, color: Colors.blue),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             SizedBox(
-              height: 200, // 이전에는 250이었지만 200으로 수정하여 VOC 분류별 현황과 동일하게 맞춤
-              child: chart,
+              height: 250, // 차트 높이 고정
+              child: chartWidget,
             ),
           ],
         ),
       ),
     );
   }
-  
-  // 파이 차트 위젯 (축소 버전)
-  Widget _buildCompactPieChart(Map<String, int> data) {
-    // 차트 데이터 색상 (상태별 색상 지정)
-    Map<String, Color> statusColors = {
-      '진행중': Colors.orange,
-      '보류': Colors.red,
-      '완료': Colors.green,
-      '접수': Colors.blue,
-      '취소': Colors.purple,
-    };
-    
-    // 기본 색상 리스트
-    final List<Color> chartColors = [
-      Colors.blue,
-      Colors.green,
-      Colors.orange,
-      Colors.red,
-      Colors.purple,
-      Colors.teal,
-      Colors.pink,
-    ];
-    
-    // 전체 데이터 합계 계산
-    final int totalCount = data.values.fold(0, (sum, value) => sum + value);
-    
-    // '접수' 값 찾기
-    final int receiptCount = data['접수'] ?? 0;
-    
-    return Column(
-      mainAxisSize: MainAxisSize.min, // 최소 크기로 제한
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start, // 상단 정렬로 변경
-          children: [
-            // 파이 차트 (크기 조정)
-            Expanded(
-              flex: 3,
-              child: SizedBox(
-                height: 200, // 이전에는 180이었지만 VOC 분류별 현황과 동일하게 200으로 수정
-                child: PieChart(
-                  PieChartData(
-                    sections: List.generate(data.keys.length, (index) {
-                      final key = data.keys.elementAt(index);
-                      final value = data[key] ?? 0;
-                      final total = data.values.fold(0, (sum, value) => sum + value);
-                      final percentage = total > 0 ? (value / total * 100) : 0;
-                      
-                      // 상태에 따른 색상 지정
-                      final color = statusColors[key] ?? chartColors[index % chartColors.length];
-                      
-                      return PieChartSectionData(
-                        color: color,
-                        value: value.toDouble(),
-                        title: '${percentage.toStringAsFixed(1)}%',
-                        radius: 56, // 이전값 70에서 20% 감소시켜 56으로 수정
-                        titleStyle: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13, // 크기가 줄었으므로 폰트 크기도 약간 감소
-                        ),
-                      );
-                    }),
-                    centerSpaceRadius: 24, // 이전값 30에서 20% 감소시켜 24로 수정
-                    sectionsSpace: 2,
-                  ),
-                ),
-              ),
-            ),
-            
-            // 범례
-            Expanded(
-              flex: 2,
-              child: Container(
-                height: 200, // 이전에는 180이었지만 VOC 분류별 현황과 동일하게 200으로 수정
-                child: SingleChildScrollView( // 스크롤 가능하게 만들어 오버플로우 방지
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center, // 수직 방향으로 중앙 정렬 유지
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start, // 중앙 정렬에서 왼쪽 정렬로 변경
-                    children: [
-                      // 전체 VOC 총 건수 먼저 표시
-                      Container(
-                        padding: const EdgeInsets.only(bottom: 10, top: 8, left: 20), // 왼쪽 여백 추가
-                        width: double.infinity, // 너비를 최대로 설정
-                        child: Text(
-                          '총 ${totalCount}건',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue.shade700,
-                          ),
-                          textAlign: TextAlign.left, // 중앙 정렬에서 왼쪽 정렬로 변경
-                        ),
-                      ),
-                      // 상태별 항목 표시
-                      ...List.generate(data.keys.length, (index) {
-                        final key = data.keys.elementAt(index);
-                        final value = data[key] ?? 0;
-                        
-                        // 상태에 따른 색상 지정
-                        final color = statusColors[key] ?? chartColors[index % chartColors.length];
-                        
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start, // 중앙 정렬에서 왼쪽 정렬로 변경
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(left: 20, top: 6, bottom: 6), // 좌측 여백 추가 및 상하 여백 증가
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.start, // 중앙 정렬에서 왼쪽 정렬로 변경
-                                children: [
-                                  Container(
-                                    width: 14, // 크기 유지
-                                    height: 14, // 크기 유지
-                                    decoration: BoxDecoration(
-                                      color: color,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12), // 간격 증가
-                                  Text(
-                                    key,
-                                    style: const TextStyle(fontSize: 14), // 폰트 크기 유지
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(width: 10), // 간격 증가
-                                  Text(
-                                    '$value건',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14, // 폰트 크기 유지
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-  
-  // 진행 중/보류 VOC 테이블 위젯
-  Widget _buildPendingVocTable() {
-    // 진행 중이거나 보류 상태인 VOC만 필터링
-    final pendingVocs = _vocData.where((voc) => 
-      voc.status == '진행중' || voc.status == '보류').toList();
-    
-    // 페이지네이션 관련 상태 변수
-    final int rowsPerPage = 5; // 한 페이지당 표시할 행 수를 5로 고정
-    final int totalPages = (pendingVocs.length / rowsPerPage).ceil();
-    final ValueNotifier<int> currentPage = ValueNotifier<int>(0);
-    
-    // 현재 페이지의 데이터만 가져오기
-    List<VocModel> getPaginatedData() {
-      if (pendingVocs.isEmpty) return [];
-      
-      final startIndex = currentPage.value * rowsPerPage;
-      final endIndex = (startIndex + rowsPerPage > pendingVocs.length) 
-          ? pendingVocs.length 
-          : startIndex + rowsPerPage;
-      
-      return pendingVocs.sublist(startIndex, endIndex);
+
+  // 원형 차트 빌드
+  Widget _buildPieChart(Map<String, int> data, Map<String, Color> colors) {
+    if (data.isEmpty) {
+      return const Center(child: Text('데이터 없음'));
     }
     
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16), // 패딩 유지
-        child: Column(
-          mainAxisSize: MainAxisSize.min, // 크기 제한 유지
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // 제목과 총 건수 같이 표시
-                Row(
-                  children: [
-                    Icon(Icons.pending_actions, color: Colors.orange, size: 22), // 아이콘 크기 유지
-                    const SizedBox(width: 8),
-                    Text(
-                      '진행 중/보류 VOC',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontSize: 16, // 글자 크기 유지
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      '총 ${pendingVocs.length}건',
-                      style: TextStyle(
-                        fontSize: 13, // 폰트 크기 유지
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange.shade800,
-                      ),
-                    ),
-                  ],
-                ),
-                // 페이지네이션 컨트롤 
-                if (pendingVocs.length > rowsPerPage)
-                  ValueListenableBuilder<int>(
-                    valueListenable: currentPage,
-                    builder: (context, page, _) {
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.chevron_left, size: 20),
-                            onPressed: page > 0
-                                ? () => currentPage.value--
-                                : null,
-                            iconSize: 20,
-                            padding: EdgeInsets.all(4),
-                            constraints: BoxConstraints(
-                              minWidth: 28,
-                              minHeight: 28,
-                            ),
-                          ),
-                          Text(
-                            '${page + 1}/$totalPages',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.chevron_right, size: 20),
-                            onPressed: page < totalPages - 1
-                                ? () => currentPage.value++
-                                : null,
-                            iconSize: 20, 
-                            padding: EdgeInsets.all(4),
-                            constraints: BoxConstraints(
-                              minWidth: 28,
-                              minHeight: 28,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-              ],
-            ),
-            const SizedBox(height: 10), // 간격 유지
-            // 테이블 높이를 상태별 현황 차트와 동일하게 맞춤
-            SizedBox(
-              height: 200, // 이전에는 275였지만 VOC 분류별 현황과 동일한 높이로 수정
-              child: pendingVocs.isEmpty
-                ? const Center(
-                    child: Text('진행 중이거나 보류 중인 VOC가 없습니다.', style: TextStyle(fontSize: 13)),
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min, // 최소 크기로 제한
-                    children: [
-                      // 테이블 헤더
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 14), // 패딩 유지
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade200,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                '등록일',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13), // 폰트 크기 유지
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                            Expanded(
-                              flex: 1,
-                              child: Text(
-                                '상태',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13), // 폰트 크기 유지
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                '요청내용',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13), // 폰트 크기 유지
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Text(
-                                '완료일정',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13), // 폰트 크기 유지
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // 테이블 본문
-                      Expanded(
-                        child: ValueListenableBuilder<int>(
-                          valueListenable: currentPage,
-                          builder: (context, page, _) {
-                            final paginatedVocs = getPaginatedData();
-                            // 항상 5개 행의 높이를 가진 영역 유지 (빈 행도 표시)
-                            return ListView.builder( // Column 대신 ListView 사용
-                              shrinkWrap: true, // 내부 콘텐츠에 맞게 크기 조정
-                              physics: const NeverScrollableScrollPhysics(), // 스크롤 비활성화
-                              itemCount: rowsPerPage,
-                              itemBuilder: (context, i) {
-                                return i < paginatedVocs.length
-                                  ? _buildVocRow(paginatedVocs[i])
-                                  : _buildEmptyRow(); // 비어 있는 행도 공간 차지하도록
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  // VOC 행 항목 위젯 (코드 재사용을 위해 분리)
-  Widget _buildVocRow(VocModel voc) {
-    // 상태에 따른 색상 지정
-    final Map<String, Color> statusColors = {
-      '진행중': Colors.orange,
-      '보류': Colors.red,
-      '완료': Colors.green,
-      '접수': Colors.blue,
-      '취소': Colors.purple,
-    };
+    int total = data.values.fold(0, (sum, item) => sum + item);
     
-    // 상태별 배경색과 텍스트 색상
-    final backgroundColor = statusColors[voc.status]?.withOpacity(0.15) ?? Colors.grey.shade100;
-    final textColor = statusColors[voc.status] ?? Colors.grey.shade800;
+    return PieChart(
+      PieChartData(
+        sectionsSpace: 2,
+        centerSpaceRadius: 40,
+        sections: data.entries.map((entry) {
+          final percentage = total > 0 ? (entry.value / total) * 100 : 0;
+          return PieChartSectionData(
+            color: colors[entry.key] ?? Colors.grey,
+            value: entry.value.toDouble(),
+            title: '${percentage.toStringAsFixed(1)}%',
+            radius: 60,
+            titleStyle: const TextStyle(
+              fontSize: 12, 
+              fontWeight: FontWeight.bold, 
+              color: Colors.white,
+            ),
+            badgeWidget: Text(entry.key, style: const TextStyle(fontSize: 10)),
+            badgePositionPercentageOffset: .98,
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // 막대 차트 빌드
+  Widget _buildBarChart(Map<String, int> data, Map<String, Color> colors) {
+    if (data.isEmpty) {
+      return const Center(child: Text('데이터 없음'));
+    }
     
-    return Container(
-      height: 32, // 행 높이 증가
-      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 14), // 패딩 증가
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade300,
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              DateFormat('yyyy-MM-dd').format(voc.regDate),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13), // 폰트 크기 증가
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 5, vertical: 2), // 패딩 증가
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                voc.status,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13, // 폰트 크기 증가
-                  color: textColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              voc.request,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13), // 폰트 크기 증가
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              voc.dueDate != null 
-                ? DateFormat('yyyy-MM-dd').format(voc.dueDate!)
-                : '-',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13), // 폰트 크기 증가
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // 빈 행 위젯
-  Widget _buildEmptyRow() {
-    return Container(
-      height: 32, // 행 높이 증가
-      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 14), // 패딩 증가
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade300,
-            width: 0.5,
-          ),
-        ),
-      ),
-    );
-  }
-  
-  // 바 차트 위젯
-  Widget _buildBarChart(Map<String, int> data) {
-    // 데이터 정렬 (값 기준 내림차순)
-    final sortedEntries = data.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    final maxValue = data.values.isNotEmpty ? data.values.reduce((a, b) => a > b ? a : b).toDouble() : 10.0;
     
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
+        maxY: maxValue * 1.2, // 상단 여유 공간 확보
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
             tooltipBgColor: Colors.blueGrey,
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              final entry = sortedEntries[groupIndex];
+              String category = data.keys.elementAt(group.x.toInt());
               return BarTooltipItem(
-                '${entry.key}: ${entry.value}건',
-                const TextStyle(color: Colors.white),
+                '$category\n',
+                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                children: <TextSpan>[
+                  TextSpan(
+                    text: (rod.toY - 1).toString(), // toY는 1부터 시작하므로 1 빼기?
+                    style: const TextStyle(color: Colors.yellow, fontSize: 10, fontWeight: FontWeight.w500),
+                  ),
+                ],
               );
             },
           ),
@@ -986,207 +507,135 @@ class _DashboardPageState extends State<DashboardPage> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 30,
               getTitlesWidget: (value, meta) {
-                if (value < 0 || value >= sortedEntries.length) {
-                  return const SizedBox();
+                final index = value.toInt();
+                if (index >= 0 && index < data.keys.length) {
+                  return SideTitleWidget(
+                    axisSide: meta.axisSide,
+                    space: 4.0,
+                    child: Text(data.keys.elementAt(index), style: const TextStyle(fontSize: 10)),
+                  );
                 }
-                
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    sortedEntries[value.toInt()].key,
-                    style: const TextStyle(fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
-                );
+                return Container();
               },
+              reservedSize: 30,
             ),
           ),
           leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 30,
-              getTitlesWidget: (value, meta) {
-                if (value == value.roundToDouble()) {
-                  return Text(
-                    value.toInt().toString(),
-                    style: const TextStyle(fontSize: 12),
-                  );
-                }
-                return const SizedBox();
-              },
-            ),
+            sideTitles: SideTitles(showTitles: true, reservedSize: 28),
           ),
-          topTitles: AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          rightTitles: AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
+          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
-        borderData: FlBorderData(
-          show: false,
-        ),
-        gridData: FlGridData(
-          show: true,
-          horizontalInterval: 1,
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: Colors.grey.withOpacity(0.3),
-              strokeWidth: 1,
-            );
-          },
-        ),
-        barGroups: List.generate(sortedEntries.length, (index) {
-          final entry = sortedEntries[index];
+        borderData: FlBorderData(show: false),
+        gridData: FlGridData(show: true, drawVerticalLine: false),
+        barGroups: data.entries.toList().asMap().entries.map((entry) {
+          final index = entry.key;
+          final dataEntry = entry.value;
           return BarChartGroupData(
             x: index,
             barRods: [
               BarChartRodData(
-                toY: entry.value.toDouble(),
-                color: Colors.blue.withOpacity(0.7),
-                width: 20,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(6),
-                  topRight: Radius.circular(6),
-                ),
+                toY: dataEntry.value.toDouble(),
+                color: colors[dataEntry.key] ?? Colors.grey,
+                width: 16,
+                borderRadius: BorderRadius.circular(4),
               ),
             ],
           );
-        }),
+        }).toList(),
       ),
     );
   }
-  
-  // 라인 차트 위젯
-  Widget _buildLineChart() {
-    if (_dailyCount.isEmpty) {
-      return const Center(child: Text('데이터가 없습니다'));
+
+  // 라인 차트 빌드
+  Widget _buildLineChart(List<MapEntry<DateTime, int>> data) {
+    if (data.isEmpty) {
+      return const Center(child: Text('데이터 없음'));
     }
     
-    // x축 간격 계산 (최소 7일)
-    final daysCount = _dailyCount.length;
-    int interval = (daysCount / 7).ceil();
-    if (interval == 0) interval = 1;
+    final maxValue = data.isNotEmpty ? data.map((e) => e.value).reduce((a, b) => a > b ? a : b).toDouble() : 10.0;
     
     return LineChart(
       LineChartData(
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: true,
-          horizontalInterval: 1,
-          verticalInterval: 1,
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: Colors.grey.withOpacity(0.3),
-              strokeWidth: 1,
-            );
-          },
-          getDrawingVerticalLine: (value) {
-            return FlLine(
-              color: Colors.grey.withOpacity(0.3),
-              strokeWidth: 1,
-            );
-          },
-        ),
+        maxY: maxValue * 1.2,
+        minY: 0,
+        gridData: FlGridData(show: true),
         titlesData: FlTitlesData(
           show: true,
-          rightTitles: AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          topTitles: AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 30,
-              interval: interval.toDouble(),
+              interval: data.length > 10 ? (data.length / 5).roundToDouble() * Duration.millisecondsPerDay : Duration.millisecondsPerDay.toDouble(), // 데이터 개수에 따라 간격 조절
               getTitlesWidget: (value, meta) {
-                if (value < 0 || value >= _dailyCount.length) {
-                  return const SizedBox();
+                final date = DateTime.fromMillisecondsSinceEpoch(value.toInt());
+                // 첫 번째, 중간, 마지막 날짜만 표시하거나 간격 조절
+                if (value == data.first.key.millisecondsSinceEpoch.toDouble() || 
+                    value == data.last.key.millisecondsSinceEpoch.toDouble() ||
+                    (data.length > 10 && (value - data.first.key.millisecondsSinceEpoch.toDouble()) % (Duration.millisecondsPerDay * (data.length / 5).round()) == 0)) {
+                   return SideTitleWidget(
+                     axisSide: meta.axisSide,
+                     space: 8.0,
+                     child: Text(DateFormat('MM/dd').format(date), style: const TextStyle(fontSize: 10)),
+                   );
                 }
-                
-                final date = _dailyCount[value.toInt()].key;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    DateFormat('MM/dd').format(date),
-                    style: const TextStyle(fontSize: 10),
-                  ),
-                );
+                return Container();
               },
             ),
           ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 2,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  value.toInt().toString(),
-                  style: const TextStyle(fontSize: 10),
-                );
-              },
-              reservedSize: 40,
-            ),
-          ),
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28)),
+          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
-        borderData: FlBorderData(
-          show: true,
-          border: Border.all(color: Colors.grey.withOpacity(0.5)),
-        ),
-        minX: 0,
-        maxX: (_dailyCount.length - 1).toDouble(),
-        minY: 0,
-        maxY: _dailyCount.map((e) => e.value).reduce((a, b) => a > b ? a : b) * 1.2,
+        borderData: FlBorderData(show: true, border: Border.all(color: const Color(0xff37434d), width: 1)),
         lineBarsData: [
           LineChartBarData(
-            spots: List.generate(_dailyCount.length, (index) {
-              return FlSpot(
-                index.toDouble(),
-                _dailyCount[index].value.toDouble(),
-              );
-            }),
+            spots: data.map((entry) => FlSpot(entry.key.millisecondsSinceEpoch.toDouble(), entry.value.toDouble())).toList(),
             isCurved: true,
             color: Colors.blue,
             barWidth: 3,
             isStrokeCapRound: true,
-            dotData: FlDotData(
-              show: true,
-              getDotPainter: (spot, percent, barData, index) {
-                return FlDotCirclePainter(
-                  radius: 4,
-                  color: Colors.white,
-                  strokeWidth: 2,
-                  strokeColor: Colors.blue,
-                );
-              },
-            ),
-            belowBarData: BarAreaData(
-              show: true,
-              color: Colors.blue.withOpacity(0.2),
-            ),
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: true, color: Colors.blue.withOpacity(0.3)),
           ),
         ],
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            tooltipBgColor: Colors.blueGrey.withOpacity(0.8),
-            getTooltipItems: (List<LineBarSpot> touchedSpots) {
-              return touchedSpots.map((spot) {
-                final date = _dailyCount[spot.x.toInt()].key;
-                final count = spot.y.toInt();
-                return LineTooltipItem(
-                  '${DateFormat('yyyy-MM-dd').format(date)}\n$count건',
-                  const TextStyle(color: Colors.white),
-                );
-              }).toList();
-            },
-          ),
-        ),
       ),
     );
+  }
+  
+  // 색상 맵 (필요에 따라 추가)
+  Map<String, Color> _getVocCategoryColors() {
+    return {
+      'MES 본사': Colors.blue,
+      'QMS 본사': Colors.green,
+      'MES 베트남': Colors.orange,
+      'QMS 베트남': Colors.red,
+      '하드웨어': Colors.purple,
+      '소프트웨어': Colors.teal,
+      '그룹웨어': Colors.pink,
+      '통신': Colors.brown,
+      '기타': Colors.grey,
+    };
+  }
+
+  Map<String, Color> _getRequestTypeColors() {
+    return {
+      '단순문의': Colors.cyan,
+      '전산오류': Colors.redAccent,
+      '시스템 개발': Colors.lightGreen,
+      '업무협의': Colors.amber,
+      '데이터수정': Colors.deepPurpleAccent,
+      '기타': Colors.blueGrey,
+    };
+  }
+
+  Map<String, Color> _getStatusColors() {
+    return {
+      '접수': Colors.grey,
+      '진행중': Colors.blue,
+      '완료': Colors.green,
+      '보류': Colors.orange,
+    };
   }
 } 
