@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/rendering.dart';
 import 'package:pluto_grid_plus/pluto_grid_plus.dart';
 import 'package:intl/intl.dart';
 import '../models/hardware_model.dart';
@@ -11,6 +12,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:file_saver/file_saver.dart';
 import 'dart:typed_data';
 import 'dart:io';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:flutter/services.dart';
+import 'dart:ui' as ui;
 
 class HardwareManagementPage extends StatefulWidget {
   const HardwareManagementPage({super.key});
@@ -193,6 +200,7 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
           'serialNumber': PlutoCell(value: data.serialNumber ?? ''),
           'warrantyDate': PlutoCell(value: data.warrantyDate),
           'currentUser': PlutoCell(value: data.currentUser ?? ''),
+          'qrButton': PlutoCell(value: '출력'),
           'remarks': PlutoCell(value: data.remarks),
         },
       ));
@@ -217,6 +225,7 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
       PlutoColumn(title: '시리얼넘버', field: 'serialNumber', type: PlutoColumnType.text(), width: 120, enableEditingMode: true),
       PlutoColumn(title: '무상보증일', field: 'warrantyDate', type: PlutoColumnType.date(), width: 100, enableEditingMode: true),
       PlutoColumn(title: '현재사용자', field: 'currentUser', type: PlutoColumnType.text(), width: 100, enableEditingMode: true),
+      PlutoColumn(title: 'QR현품표', field: 'qrButton', type: PlutoColumnType.text(), width: 80, enableEditingMode: false, renderer: (ctx) => _buildQrButtonRenderer(ctx)),
       PlutoColumn(title: '비고', field: 'remarks', type: PlutoColumnType.text(), width: 150, enableEditingMode: true),
     ];
   }
@@ -1191,6 +1200,362 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
     );
   }
 
+  // QR 버튼 렌더러 수정
+  Widget _buildQrButtonRenderer(PlutoColumnRendererContext context) {
+    return Center(
+      child: ElevatedButton(
+        onPressed: () {
+          final rowIdx = context.rowIdx;
+          if (rowIdx < 0 || rowIdx >= _paginatedData().length) return;
+          
+          final hardware = _paginatedData()[rowIdx];
+          // BuildContext를 직접 가져오기
+          _showQrTagPopup(this.context, hardware);
+        },
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          minimumSize: const Size(60, 28),
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(fontSize: 12),
+        ),
+        child: const Text('출력'),
+      ),
+    );
+  }
+
+  // QR 현품표 팝업 표시
+  void _showQrTagPopup(BuildContext context, HardwareModel hardware) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        contentPadding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        backgroundColor: Colors.grey[200], // 살짝 회색 배경
+        content: Container(
+          width: 600, // 너비 조정
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '전산자산 현품표',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // QR 코드 및 정보 표시
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // QR 코드 - 크기 유지
+                  Container(
+                    width: 160,
+                    height: 160,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    padding: const EdgeInsets.all(5),
+                    child: QrImageView(
+                      data: hardware.assetCode,
+                      version: QrVersions.auto,
+                      size: 150,
+                      padding: const EdgeInsets.all(5),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  
+                  // 정보 테이블 - 테두리 개선
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Table(
+                        border: TableBorder.all(
+                          color: Colors.grey,
+                          width: 0.5,
+                        ),
+                        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                        columnWidths: const {
+                          0: FixedColumnWidth(80), // 좁게 조정
+                          1: FlexColumnWidth(3),
+                        },
+                        children: [
+                          _buildTableRow('자산코드', hardware.assetCode),
+                          _buildTableRow('자산분류', hardware.assetType ?? ''),
+                          _buildTableRow('자산명', hardware.assetName),
+                          _buildTableRow('규격', hardware.specification),
+                          _buildTableRow('구매일', hardware.purchaseDate != null 
+                            ? DateFormat('yyyy-MM-dd').format(hardware.purchaseDate!) 
+                            : ''),
+                          _buildTableRow('시리얼넘버', hardware.serialNumber ?? ''),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // 출력 버튼
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: () => _printQrTag(hardware),
+                  icon: const Icon(Icons.print),
+                  label: const Text('출력하기'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 테이블 행 생성 헬퍼 함수
+  TableRow _buildTableRow(String label, String value) {
+    return TableRow(
+      children: [
+        TableCell(
+          verticalAlignment: TableCellVerticalAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+        TableCell(
+          verticalAlignment: TableCellVerticalAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
+            child: Text(
+              value,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // PDF 생성 및 출력 함수 개선
+  Future<void> _printQrTag(HardwareModel hardware) async {
+    try {
+      // 한글 폰트 데이터 로드
+      final fontData = await rootBundle.load('assets/fonts/NanumGothic-Regular.ttf');
+      final fontBytes = fontData.buffer.asUint8List(fontData.offsetInBytes, fontData.lengthInBytes);
+      
+      // QR 코드 이미지 생성
+      final qrPainter = QrPainter(
+        data: hardware.assetCode,
+        version: QrVersions.auto,
+        color: const Color(0xFF000000),
+        emptyColor: const Color(0xFFFFFFFF),
+        gapless: true,
+      );
+      
+      // QR 코드를 이미지로 변환
+      final qrSize = 150.0; // 크기 조정
+      final qrImageRecorder = ui.PictureRecorder();
+      final qrImageCanvas = Canvas(qrImageRecorder);
+      
+      qrPainter.paint(qrImageCanvas, Size(qrSize, qrSize));
+      final qrImagePicture = qrImageRecorder.endRecording();
+      final qrImage = await qrImagePicture.toImage(qrSize.toInt(), qrSize.toInt());
+      final qrImageByteData = await qrImage.toByteData(format: ui.ImageByteFormat.png);
+      
+      if (qrImageByteData == null) {
+        throw Exception('QR 코드 이미지 생성 실패');
+      }
+      
+      final qrImageBytes = qrImageByteData.buffer.asUint8List();
+      
+      // PDF 직접 생성
+      final pdf = pw.Document();
+      
+      // 한글 폰트 등록
+      final koreanFont = pw.Font.ttf(fontBytes.buffer.asByteData());
+      
+      // 날짜 포맷터
+      final dateFormat = DateFormat('yyyy-MM-dd');
+      
+      // PDF 테마 설정 (한글 폰트 적용)
+      final themeData = pw.ThemeData.withFont(
+        base: koreanFont,
+        bold: koreanFont,
+        italic: koreanFont,
+        boldItalic: koreanFont,
+      );
+      
+      // 라운드 테두리와 배경색 정의
+      final contentDecoration = pw.BoxDecoration(
+        color: PdfColors.grey200, // 살짝 회색 배경
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(12)),
+      );
+      
+      // PDF 페이지 추가
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a5,
+          theme: themeData,
+          margin: const pw.EdgeInsets.all(16),
+          build: (pw.Context context) {
+            return pw.Container(
+              decoration: contentDecoration,
+              padding: const pw.EdgeInsets.all(16),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.Center(
+                    child: pw.Text(
+                      '전산자산 현품표',
+                      style: pw.TextStyle(
+                        fontSize: 20,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 16),
+                  
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      // QR 코드 이미지 - 팝업과 동일한 비율
+                      pw.Container(
+                        width: 160,
+                        height: 160,
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.white,
+                          border: pw.Border.all(color: PdfColors.grey),
+                          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                        ),
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Center(
+                          child: pw.Image(
+                            pw.MemoryImage(qrImageBytes),
+                            width: 150,
+                            height: 150,
+                          ),
+                        ),
+                      ),
+                      pw.SizedBox(width: 16),
+                      
+                      // 정보 테이블 - 비율 동일하게
+                      pw.Expanded(
+                        child: pw.Container(
+                          decoration: pw.BoxDecoration(
+                            color: PdfColors.white,
+                            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                          ),
+                          child: pw.Table(
+                            border: pw.TableBorder.all(
+                              color: PdfColors.grey,
+                              width: 0.5,
+                            ),
+                            columnWidths: {
+                              0: const pw.FixedColumnWidth(80), // 좁게 조정
+                              1: const pw.FlexColumnWidth(3),
+                            },
+                            children: [
+                              _buildPdfTableRow('자산코드', hardware.assetCode),
+                              _buildPdfTableRow('자산분류', hardware.assetType ?? ''),
+                              _buildPdfTableRow('자산명', hardware.assetName),
+                              _buildPdfTableRow('규격', hardware.specification),
+                              _buildPdfTableRow('구매일', hardware.purchaseDate != null 
+                                ? dateFormat.format(hardware.purchaseDate!) 
+                                : ''),
+                              _buildPdfTableRow('시리얼넘버', hardware.serialNumber ?? ''),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+      
+      // 바로 출력 대화상자 열기 (버튼 없음)
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async {
+          return pdf.save();
+        },
+      );
+    } catch (e) {
+      debugPrint('PDF 출력 오류: $e');
+      // 오류 발생시 사용자에게 알림
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('출력 오류'),
+            content: Text('현품표 출력 중 오류가 발생했습니다: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('확인'),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+  
+  // PDF용 테이블 행 생성
+  pw.TableRow _buildPdfTableRow(String label, String value) {
+    return pw.TableRow(
+      children: [
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12),
+            textAlign: pw.TextAlign.center,
+          ),
+        ),
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
+          child: pw.Text(
+            value,
+            softWrap: true,
+            style: pw.TextStyle(fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pageData = _paginatedData();
@@ -1199,20 +1564,18 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
       appBar: AppBar(
         title: const Text('하드웨어 관리'),
         elevation: 0,
-        backgroundColor: const Color(0xFFF0F4F8),
+        backgroundColor: const Color(0xFFF0F0F5), // 솔루션 개발 페이지와 동일한 배경색
       ),
-      body: Container(
-        color: const Color(0xFFF0F4F8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 탭바 영역 - 배경색을 앱바와 동일하게 변경하고 구분선 제거
-            Container(
-              color: const Color(0xFFF0F4F8),
-              child: Container(
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.only(left: 20),
-                child: TabBar(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 탭바 영역 - 솔루션 개발 페이지와 일치하도록 수정
+          Container(
+            color: const Color(0xFFF0F0F5), // 솔루션 개발 페이지와 동일한 배경색
+            child: Column(
+              children: [
+                // 탭바
+                TabBar(
                   controller: _tabController,
                   tabs: _hardwareTabs.map((tab) => Tab(text: tab)).toList(),
                   onTap: (index) => setState(() {}),
@@ -1223,56 +1586,66 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
                   unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14),
                   isScrollable: true,
                   indicatorSize: TabBarIndicatorSize.tab,
-                  padding: EdgeInsets.zero,
+                  padding: const EdgeInsets.only(left: 8),
                   labelPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   indicatorPadding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
-              ),
+                // 탭바 하단 구분선
+                Container(
+                  height: 1,
+                  color: Colors.grey.shade300,
+                ),
+              ],
             ),
-            
-            // 탭 컨텐츠 영역
-            Expanded(
-              child: Container(
-                color: Colors.white,
-                child: _tabController.index == 0
-                    ? _buildDataManagementView(pageData)
-                    : HardwareDashboardPage(hardwareData: _hardwareData),
-              ),
+          ),
+          
+          // 탭 컨텐츠 영역
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              physics: const AlwaysScrollableScrollPhysics(), // 스크롤 애니메이션을 일관되게
+              children: [
+                _buildDataManagementView(pageData),
+                HardwareDashboardPage(hardwareData: _hardwareData),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   // 데이터 관리 탭 뷰
   Widget _buildDataManagementView(List<HardwareModel> pageData) {
-    return Column(
-      children: [
-        // 1. 필터 (맨 위에 배치)
-        _buildFilterBar(),
-        
-        // 2. 타이틀과 실행버튼 (필터 아래 배치)
-        _buildTitleAndActions(),
-        
-        // 3. 범례 (타이틀과 실행버튼 아래 배치)
-        if (_hardwareData.isNotEmpty) _buildLegend(),
-        
-        // 4. 데이터 테이블 (범례 아래 배치, 확장 가능)
-        Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _hardwareData.isEmpty
-                  ? _buildEmptyDataView()
-                  : Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                      child: _buildDataTable(),
-                    ),
-        ),
-        
-        // 5. 페이지 네비게이션 (맨 아래에 배치)
-        if (_hardwareData.isNotEmpty && _totalPages > 0) _buildPageNavigator(),
-      ],
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          // 1. 필터 (맨 위에 배치)
+          _buildFilterBar(),
+          
+          // 2. 타이틀과 실행버튼 (필터 아래 배치)
+          _buildTitleAndActions(),
+          
+          // 3. 범례 (타이틀과 실행버튼 아래 배치)
+          if (_hardwareData.isNotEmpty) _buildLegend(),
+          
+          // 4. 데이터 테이블 (범례 아래 배치, 확장 가능)
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _hardwareData.isEmpty
+                    ? _buildEmptyDataView()
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                        child: _buildDataTable(),
+                      ),
+          ),
+          
+          // 5. 페이지 네비게이션 (맨 아래에 배치)
+          if (_hardwareData.isNotEmpty && _totalPages > 0) _buildPageNavigator(),
+        ],
+      ),
     );
   }
 
