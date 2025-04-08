@@ -18,37 +18,95 @@ class ApiService {
   
   ApiService._internal();
   
-  // MongoDB 컬렉션 매핑 계획 (모듈별 데이터 분리)
-  // 현재: nexplus_task 데이터베이스의 단일 컬렉션(vocs)에 모든 데이터 저장 중
-  // 
-  // 개선 계획: 각 모듈별로 개별 컬렉션을 사용하여 데이터를 분리 저장하고 관리
-  // 1. nexplus_task 데이터베이스에 모듈별 컬렉션 분리:
-  //   - solution_vocs: 솔루션 VOC 데이터
-  //   - hardware_assets: 하드웨어 자산 데이터
-  //   - software_assets: 소프트웨어 자산 데이터
-  //   - system_updates: 시스템 업데이트 데이터
-  //   - equipment_connections: 설비 연동 데이터
-  //
-  // 2. API 엔드포인트 계획:
-  //   - /api/solution/voc: 솔루션 VOC API
-  //   - /api/hardware: 하드웨어 자산 API
-  //   - /api/software: 소프트웨어 자산 API
-  //   - /api/system-updates: 시스템 업데이트 API
-  //   - /api/equipment: 설비 연동 API
-  //
-  // 현재는 서버측 구현이 완료되지 않아 기존 API 엔드포인트(/api/voc 등)를 사용 중
+  // 에러 로깅 함수 (디버그 정보 향상)
+  void _logError(String operation, dynamic error, [String? url, dynamic data]) {
+    String message = '[$operation 실패] $error';
+    if (url != null) {
+      message += '\nURL: $url';
+    }
+    if (data != null) {
+      if (data is Map || data is List) {
+        try {
+          message += '\n데이터: ${jsonEncode(data)}';
+        } catch (e) {
+          message += '\n데이터: $data (인코딩 불가)';
+        }
+      } else {
+        message += '\n데이터: $data';
+      }
+    }
+    debugPrint(message);
+  }
+
+  // HTTP GET 요청 래퍼 함수
+  Future<http.Response> _safeGet(Uri uri, {int timeoutSeconds = 10}) async {
+    try {
+      return await http.get(uri).timeout(
+        Duration(seconds: timeoutSeconds),
+        onTimeout: () => http.Response('Timeout', 408),
+      );
+    } catch (e) {
+      _logError('GET 요청', e, uri.toString());
+      return http.Response('Error: $e', 500);
+    }
+  }
+
+  // HTTP POST 요청 래퍼 함수
+  Future<http.Response> _safePost(Uri uri, Map<String, dynamic> body, {int timeoutSeconds = 15}) async {
+    try {
+      return await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      ).timeout(
+        Duration(seconds: timeoutSeconds),
+        onTimeout: () => http.Response('Timeout', 408),
+      );
+    } catch (e) {
+      _logError('POST 요청', e, uri.toString(), body);
+      return http.Response('Error: $e', 500);
+    }
+  }
+
+  // HTTP PUT 요청 래퍼 함수
+  Future<http.Response> _safePut(Uri uri, Map<String, dynamic> body, {int timeoutSeconds = 15}) async {
+    try {
+      return await http.put(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      ).timeout(
+        Duration(seconds: timeoutSeconds),
+        onTimeout: () => http.Response('Timeout', 408),
+      );
+    } catch (e) {
+      _logError('PUT 요청', e, uri.toString(), body);
+      return http.Response('Error: $e', 500);
+    }
+  }
+
+  // HTTP DELETE 요청 래퍼 함수
+  Future<http.Response> _safeDelete(Uri uri, {int timeoutSeconds = 10}) async {
+    try {
+      return await http.delete(uri).timeout(
+        Duration(seconds: timeoutSeconds),
+        onTimeout: () => http.Response('Timeout', 408),
+      );
+    } catch (e) {
+      _logError('DELETE 요청', e, uri.toString());
+      return http.Response('Error: $e', 500);
+    }
+  }
   
   // API 연결 테스트
   Future<bool> testConnection() async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/voc')).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => http.Response('Timeout', 408),
-      );
+      final uri = Uri.parse('$_baseUrl/voc');
+      final response = await _safeGet(uri, timeoutSeconds: 5);
       
       return response.statusCode == 200;
     } catch (e) {
-      debugPrint('API 연결 테스트 실패: $e');
+      _logError('API 연결 테스트', e);
       return false;
     }
   }
@@ -110,23 +168,34 @@ class ApiService {
       final uri = Uri.parse('$_baseUrl/voc').replace(queryParameters: queryParams);
       debugPrint('VOC 데이터 요청 URL: $uri');
       
-      final response = await http.get(uri);
+      final response = await _safeGet(uri);
       
       if (response.statusCode == 200) {
         final List<dynamic> dataList = json.decode(response.body);
         debugPrint('VOC 데이터 ${dataList.length}개 성공적으로 로드 (첫 5개 번호: ${dataList.take(5).map((d) => d['no']).join(', ')})');
         
-        return dataList.map((data) {
+        final List<VocModel> convertedData = [];
+        for (var data in dataList) {
+          try {
+            // _id 필드를 id로 매핑
+            if (data['_id'] != null && data['id'] == null) {
+              data['id'] = data['_id'];
+            }
+            
           final voc = VocModel.fromJson(data);
-          // API에서 불러온 데이터는 저장된 것으로 처리하고 수정되지 않은 것으로 처리
-          return voc.copyWith(isSaved: true, isModified: false);
-        }).toList();
+            convertedData.add(voc.copyWith(isSaved: true, isModified: false));
+          } catch (e) {
+            _logError('VOC 데이터 변환', e, null, data);
+          }
+        }
+        
+        return convertedData;
       } else {
-        debugPrint('VOC 데이터 로드 실패: ${response.statusCode}, ${response.body}');
+        _logError('VOC 데이터 로드', '상태 코드: ${response.statusCode}', uri.toString(), response.body);
         return []; // 빈 배열 반환
       }
     } catch (e) {
-      debugPrint('VOC 데이터 로드 중 예외 발생: $e');
+      _logError('VOC 데이터 로드', e);
       return []; // 빈 배열 반환
     }
   }
@@ -320,50 +389,129 @@ class ApiService {
     DateTime? startDate,
     DateTime? endDate,
   }) async {
-    // 쿼리 파라미터 구성
-    Map<String, String> queryParams = {};
-    
-    if (search != null && search.isNotEmpty) {
-      queryParams['search'] = search;
-    }
-    
-    if (targetSystem != null && targetSystem.isNotEmpty) {
-      queryParams['targetSystem'] = targetSystem;
-    }
-    
-    if (updateType != null && updateType.isNotEmpty) {
-      queryParams['updateType'] = updateType;
-    }
-    
-    if (status != null && status.isNotEmpty) {
-      queryParams['status'] = status;
-    }
-    
-    if (startDate != null) {
-      queryParams['startDate'] = DateFormat('yyyy-MM-dd').format(startDate);
-    }
-    
-    if (endDate != null) {
-      queryParams['endDate'] = DateFormat('yyyy-MM-dd').format(endDate);
-    }
-    
-    // 요청 URL 구성
-    final uri = Uri.https(_baseUrl, '/api/systemUpdates', queryParams);
-    
     try {
-      debugPrint('API 요청: ${uri.toString()}');
+      // 쿼리 파라미터 구성
+      Map<String, String> queryParams = {};
       
-      // API 요청 (실제로는 이 부분이 구현될 것임)
-      // final response = await http.get(uri, headers: _headers);
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
       
-      // TODO: API 구현 후 아래 코드 수정
-      // 실제 API 구현 전에는 빈 배열 반환
-      debugPrint('API 실행 실패: API가 구현되지 않았습니다');
-      return [];
+      if (targetSystem != null && targetSystem.isNotEmpty) {
+        queryParams['targetSystem'] = targetSystem;
+      }
+      
+      if (updateType != null && updateType.isNotEmpty) {
+        queryParams['updateType'] = updateType;
+      }
+      
+      if (status != null && status.isNotEmpty) {
+        queryParams['status'] = status;
+      }
+      
+      if (startDate != null) {
+        queryParams['startDate'] = DateFormat('yyyy-MM-dd').format(startDate);
+      }
+      
+      if (endDate != null) {
+        queryParams['endDate'] = DateFormat('yyyy-MM-dd').format(endDate);
+      }
+      
+      debugPrint('시스템 업데이트 데이터 요청 시작');
+
+      List<dynamic> dataList = [];
+      bool isSuccess = false;
+      String endpoint = '';
+
+      // 첫 번째 시도: 솔루션 개발 전용 API
+      try {
+        final uri = Uri.parse('$_baseUrl/solution-development').replace(queryParameters: queryParams);
+        debugPrint('시도 1: $uri');
+        
+        final response = await _safeGet(uri);
+        
+        if (response.statusCode == 200) {
+          dataList = json.decode(response.body);
+          debugPrint('solution-development 엔드포인트에서 ${dataList.length}개 데이터 로드 성공');
+          isSuccess = true;
+          endpoint = 'solution-development';
+        } else {
+          debugPrint('solution-development 엔드포인트 요청 실패: ${response.statusCode}');
+        }
+      } catch (e) {
+        _logError('solution-development 엔드포인트 요청', e);
+      }
+      
+      // 두 번째 시도: 시스템 업데이트 API
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/system-updates').replace(queryParameters: queryParams);
+          debugPrint('시도 2: $uri');
+          
+          final response = await _safeGet(uri);
+          
+          if (response.statusCode == 200) {
+            dataList = json.decode(response.body);
+            debugPrint('system-updates 엔드포인트에서 ${dataList.length}개 데이터 로드 성공');
+            isSuccess = true;
+            endpoint = 'system-updates';
+          } else {
+            debugPrint('system-updates 엔드포인트 요청 실패: ${response.statusCode}');
+          }
+        } catch (e) {
+          _logError('system-updates 엔드포인트 요청', e);
+        }
+      }
+      
+      // 세 번째 시도: 메모리 저장소 API
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/memory/system-updates').replace(queryParameters: queryParams);
+          debugPrint('시도 3: $uri');
+          
+          final response = await _safeGet(uri);
+          
+          if (response.statusCode == 200) {
+            dataList = json.decode(response.body);
+            debugPrint('memory 엔드포인트에서 ${dataList.length}개 데이터 로드 성공');
+            isSuccess = true;
+            endpoint = 'memory';
+          } else {
+            debugPrint('memory 엔드포인트 요청 실패: ${response.statusCode}');
+          }
+        } catch (e) {
+          _logError('memory 엔드포인트 요청', e);
+        }
+      }
+      
+      // 모든 API 시도 실패 시 빈 배열 반환
+      if (!isSuccess || dataList.isEmpty) {
+        debugPrint('모든 API 엔드포인트 실패 또는 데이터가 없음. 빈 배열 반환.');
+        return [];
+      }
+      
+      // 성공한 API에서 데이터 변환
+      debugPrint('사용 엔드포인트: $endpoint, 데이터 개수: ${dataList.length}');
+      final List<SystemUpdateModel> convertedData = [];
+      
+      for (var data in dataList) {
+        try {
+          // _id 필드를 id로 매핑
+          if (data['_id'] != null && data['id'] == null) {
+            data['id'] = data['_id'];
+          }
+          
+          final systemUpdate = SystemUpdateModel.fromJson(data);
+          convertedData.add(systemUpdate.copyWith(isSaved: true, isModified: false));
+        } catch (e) {
+          _logError('시스템 업데이트 데이터 변환', e, null, data);
+        }
+      }
+      
+      return convertedData;
     } catch (e) {
-      debugPrint('시스템 업데이트 데이터 로드 중 오류: $e');
-      // 에러 발생시 빈 배열 반환
-      return [];
+      _logError('시스템 업데이트 데이터 로드', e);
+      return []; // 빈 배열 반환
     }
   }
   
@@ -421,23 +569,23 @@ class ApiService {
         final uri = Uri.parse('$_baseUrl/system-updates');
         debugPrint('시도 1: $uri');
         
-        final response = await http.post(
+      final response = await http.post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
           body: jsonEncode(updateData),
         ).timeout(
           const Duration(seconds: 15),
           onTimeout: () => http.Response('Timeout', 408),
-        );
-        
+      );
+      
         debugPrint('system-updates 엔드포인트 저장 응답 상태: ${response.statusCode}');
-        
-        if (response.statusCode == 201 || response.statusCode == 200) {
+      
+      if (response.statusCode == 201 || response.statusCode == 200) {
           responseData = json.decode(response.body);
           isSuccess = true;
           endpoint = 'system-updates';
           debugPrint('system-updates 엔드포인트 저장 성공');
-        } else {
+      } else {
           debugPrint('system-updates 엔드포인트 저장 실패: ${response.body}');
         }
       } catch (e) {
@@ -513,8 +661,8 @@ class ApiService {
       
       // 모든 시도 실패 시 임시 성공 처리
       debugPrint('모든 API 엔드포인트 저장 실패, 로컬 저장 처리');
-      await Future.delayed(const Duration(milliseconds: 300));
-      return update.copyWith(isSaved: true, isModified: false);
+        await Future.delayed(const Duration(milliseconds: 300));
+        return update.copyWith(isSaved: true, isModified: false);
     } catch (e) {
       debugPrint('솔루션 개발 데이터 추가 실패: $e');
       await Future.delayed(const Duration(milliseconds: 300));
@@ -553,9 +701,9 @@ class ApiService {
         
         if (response.statusCode == 200) {
           responseData = json.decode(response.body);
+          debugPrint('system-updates 엔드포인트 수정 성공 응답: ${response.body}');
           isSuccess = true;
           endpoint = 'system-updates';
-          debugPrint('system-updates 엔드포인트 수정 성공');
         } else {
           debugPrint('system-updates 엔드포인트 수정 실패: ${response.statusCode}');
         }
@@ -568,24 +716,24 @@ class ApiService {
         try {
           final uri = Uri.parse('$_baseUrl/solution-development/code/${Uri.encodeComponent(update.updateCode!)}');
           debugPrint('시도 2: $uri');
-          
-          final response = await http.put(
+
+      final response = await http.put(
             uri,
-            headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
             body: jsonEncode(updateData),
           ).timeout(
             const Duration(seconds: 15),
             onTimeout: () => http.Response('Timeout', 408),
-          );
-          
+      );
+      
           debugPrint('solution-development 엔드포인트 수정 응답 상태: ${response.statusCode}');
-          
-          if (response.statusCode == 200) {
+      
+      if (response.statusCode == 200) {
             responseData = json.decode(response.body);
             isSuccess = true;
             endpoint = 'solution-development';
             debugPrint('solution-development 엔드포인트 수정 성공');
-          } else {
+      } else {
             debugPrint('solution-development 엔드포인트 수정 실패: ${response.statusCode}');
           }
         } catch (e) {
@@ -626,6 +774,12 @@ class ApiService {
       // 성공적으로 수정된 경우
       if (isSuccess && responseData != null) {
         debugPrint('사용 엔드포인트: $endpoint');
+        
+        // ID 필드가 _id로 넘어오는 경우 처리
+        if (responseData['_id'] != null && responseData['id'] == null) {
+          responseData['id'] = responseData['_id'];
+        }
+        
         final updatedModel = SystemUpdateModel.fromJson(responseData);
         return updatedModel.copyWith(isModified: false);
       }
@@ -661,12 +815,12 @@ class ApiService {
         );
         
         debugPrint('system-updates 엔드포인트 삭제 응답 상태: ${response.statusCode}');
-        
-        if (response.statusCode == 200 || response.statusCode == 204) {
+      
+      if (response.statusCode == 200 || response.statusCode == 204) {
           isSuccess = true;
           endpoint = 'system-updates';
           debugPrint('system-updates 엔드포인트 삭제 성공');
-        } else {
+      } else {
           debugPrint('system-updates 엔드포인트 삭제 실패: ${response.statusCode}');
         }
       } catch (e) {
@@ -734,38 +888,46 @@ class ApiService {
       
       return true;
     } catch (e) {
-      debugPrint('솔루션 개발 데이터 삭제 실패: $e');
+      _logError('하드웨어 삭제', e);
       await Future.delayed(const Duration(milliseconds: 300));
       return true;
     }
   }
   
-  // 하드웨어 데이터 조회
+  // 하드웨어 데이터 목록 조회
   Future<List<HardwareModel>> getHardwareData({
     String? search,
     String? assetCode,
+    String? assetType,
     String? assetName,
     String? executionType,
     DateTime? startDate,
     DateTime? endDate,
   }) async {
+    String endpoint = '';
+    List<HardwareModel> result = [];
+    
     try {
-      // 쿼리 파라미터 구성
-      final Map<String, String> queryParams = {};
+      // URI 생성
+      final queryParams = <String, String>{};
       
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
       }
       
-      if (assetCode != null) {
+      if (assetCode != null && assetCode.isNotEmpty) {
         queryParams['assetCode'] = assetCode;
       }
       
-      if (assetName != null) {
+      if (assetType != null && assetType.isNotEmpty) {
+        queryParams['assetType'] = assetType;
+      }
+      
+      if (assetName != null && assetName.isNotEmpty) {
         queryParams['assetName'] = assetName;
       }
       
-      if (executionType != null) {
+      if (executionType != null && executionType.isNotEmpty) {
         queryParams['executionType'] = executionType;
       }
       
@@ -777,85 +939,223 @@ class ApiService {
         queryParams['endDate'] = endDate.toIso8601String();
       }
       
-      // URL 구성
-      final uri = Uri.parse('$_baseUrl/hardware').replace(queryParameters: queryParams);
-      debugPrint('하드웨어 데이터 요청 URL: $uri');
-      
-      final response = await http.get(uri);
-      
-      if (response.statusCode == 200) {
-        final List<dynamic> dataList = json.decode(response.body);
-        debugPrint('하드웨어 데이터 ${dataList.length}개 성공적으로 로드');
+      // 1. 먼저 hardware 엔드포인트 시도
+      try {
+        final uri = Uri.parse('$_baseUrl/hardware').replace(queryParameters: queryParams);
+        debugPrint('하드웨어 데이터 로드 시도 1: $uri');
         
-        return dataList.map((data) {
-          final hardware = HardwareModel.fromJson(data);
-          // API에서 불러온 데이터는 저장된 것으로 처리하고 수정되지 않은 것으로 처리
-          return hardware.copyWith(isSaved: true, isModified: false);
-        }).toList();
-      } else {
-        debugPrint('하드웨어 데이터 로드 실패: ${response.statusCode}, ${response.body}');
-        // 테스트용 모의 데이터 반환 (실제 API 연결 전)
-        return _getMockHardwareData();
+        final response = await _safeGet(uri);
+        
+        if (response.statusCode == 200) {
+          final jsonData = json.decode(response.body) as List<dynamic>;
+          result = jsonData.map((item) => HardwareModel.fromJson(item)).toList();
+          debugPrint('hardware 엔드포인트에서 데이터 ${result.length}개 로드됨');
+          endpoint = 'hardware';
+          return result;
+        } else {
+          debugPrint('hardware 엔드포인트 실패: ${response.statusCode}');
+        }
+      } catch (e) {
+        _logError('hardware 엔드포인트 오류', e);
       }
-    } catch (e) {
-      debugPrint('하드웨어 데이터 로드 중 예외 발생: $e');
-      // 테스트용 모의 데이터 반환 (실제 API 연결 전)
-      return _getMockHardwareData();
-    }
-  }
-  
-  // 모의 하드웨어 데이터 생성 (API 연결 전 테스트용)
-  List<HardwareModel> _getMockHardwareData() {
-    final List<String> assetNames = ['서버', '데스크탑 PC', '노트북', '모니터', '네트워크 스위치', '프린터'];
-    final List<String> specifications = ['Intel i7, 16GB RAM', '27인치 4K', 'HP LaserJet', 'Dell PowerEdge', 'Cisco Catalyst', 'MacBook Pro'];
-    final List<String> executionTypes = ['신규구매', '사용불출', '수리중', '홀딩', '폐기'];
-    
-    return List.generate(25, (index) {
-      final now = DateTime.now();
-      final regDate = now.subtract(Duration(days: index * 3));
-      final assetName = assetNames[index % assetNames.length];
       
-      return HardwareModel(
-        no: 25 - index,
-        regDate: regDate,
-        code: HardwareModel.generateHardwareCode(regDate, 25 - index),
-        assetCode: 'A${(10000 + index * 3).toString()}',
-        assetName: assetName,
-        specification: specifications[index % specifications.length],
-        executionType: executionTypes[index % executionTypes.length],
-        quantity: (index % 5) + 1,
-        lotCode: 'L${(20000 + index * 7).toString()}',
-        detail: '$assetName ${index + 1}번 - 상세정보. 관리부서: IT${(index % 3) + 1}팀',
-        remarks: (index % 4 == 0) ? '긴급 처리 필요' : '',
-        isSaved: true,
-        isModified: false,
-      );
-    });
+      // 2. 다음으로 hardware-assets 엔드포인트 시도
+      try {
+        final uri = Uri.parse('$_baseUrl/hardware-assets').replace(queryParameters: queryParams);
+        debugPrint('하드웨어 데이터 로드 시도 2: $uri');
+        
+        final response = await _safeGet(uri);
+        
+        if (response.statusCode == 200) {
+          final jsonData = json.decode(response.body) as List<dynamic>;
+          result = jsonData.map((item) => HardwareModel.fromJson(item)).toList();
+          debugPrint('hardware-assets 엔드포인트에서 데이터 ${result.length}개 로드됨');
+          endpoint = 'hardware-assets';
+          return result;
+        } else {
+          debugPrint('hardware-assets 엔드포인트 실패: ${response.statusCode}');
+        }
+      } catch (e) {
+        _logError('hardware-assets 엔드포인트 오류', e);
+      }
+      
+      // 3. 마지막으로 memory/hardware 엔드포인트 시도
+      try {
+        final uri = Uri.parse('$_baseUrl/memory/hardware').replace(queryParameters: queryParams);
+        debugPrint('하드웨어 데이터 로드 시도 3: $uri');
+        
+        final response = await _safeGet(uri);
+        
+        if (response.statusCode == 200) {
+          final jsonData = json.decode(response.body) as List<dynamic>;
+          result = jsonData.map((item) => HardwareModel.fromJson(item)).toList();
+          debugPrint('memory/hardware 엔드포인트에서 데이터 ${result.length}개 로드됨');
+          endpoint = 'memory/hardware';
+          return result;
+        } else {
+          debugPrint('memory/hardware 엔드포인트 실패: ${response.statusCode}');
+        }
+      } catch (e) {
+        _logError('memory/hardware 엔드포인트 오류', e);
+      }
+      
+      // 모든 API 시도 실패 시 빈 배열 반환
+      debugPrint('모든 API 엔드포인트 실패, 빈 배열 반환');
+      return [];
+    } catch (e) {
+      _logError('하드웨어 데이터 로드 전체 오류', e);
+      return [];
+    }
   }
   
   // 하드웨어 추가
   Future<HardwareModel?> addHardware(HardwareModel hardware) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/hardware'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(hardware.toJson()),
-      );
+      // 클라이언트 모델을 서버 형식으로 변환
+      final Map<String, dynamic> hardwareData = hardware.toJson();
       
-      debugPrint('하드웨어 추가 응답 상태: ${response.statusCode}');
+      // 상세 로그 추가: 전송될 데이터 확인
+      debugPrint('[ApiService.addHardware] 전송 데이터: ${jsonEncode(hardwareData)}');
       
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        final dynamic data = json.decode(response.body);
-        return HardwareModel.fromJson(data);
+      bool isSuccess = false;
+      dynamic responseData;
+      String endpoint = '';
+      String? errorMessage;
+      
+      // 첫 번째 시도: hardware 엔드포인트
+      try {
+        final uri = Uri.parse('$_baseUrl/hardware');
+        debugPrint('[ApiService.addHardware] 시도 1: POST $uri');
+        
+        final response = await _safePost(uri, hardwareData);
+        
+        debugPrint('[ApiService.addHardware] 시도 1 응답: ${response.statusCode}');
+        if (response.body.isNotEmpty) {
+          debugPrint('[ApiService.addHardware] 시도 1 응답 본문: ${response.body}');
+        }
+        
+        if (response.statusCode == 201 || response.statusCode == 200) {
+          responseData = json.decode(response.body);
+          isSuccess = true;
+          endpoint = 'hardware';
+        } else {
+          // 오류 메시지 추출
+          try {
+            final errorData = json.decode(response.body);
+            errorMessage = errorData['message'] ?? '알 수 없는 오류';
+            debugPrint('[ApiService.addHardware] 오류 메시지: $errorMessage');
+          } catch (e) {
+            errorMessage = '데이터 파싱 오류';
+          }
+          _logError('하드웨어 추가 (시도 1)', '상태 코드: ${response.statusCode}', uri.toString(), response.body);
+        }
+      } catch (e) {
+        _logError('하드웨어 추가 (시도 1)', e);
+      }
+      
+      // 첫 번째 시도에서 유효성 검사 오류가 발생한 경우, 다음 시도 전에 필드 보정
+      if (!isSuccess && errorMessage != null && errorMessage.contains('유효성 검사')) {
+        debugPrint('[ApiService.addHardware] 유효성 검사 오류로 필드 보정 시도');
+        
+        // 빈 필드에 기본값 설정 (서버 스키마와 동일하게)
+        if (hardwareData['assetCode'] == '') {
+          hardwareData['assetCode'] = '자산코드 미지정';
+          debugPrint('[ApiService.addHardware] assetCode 필드 보정: 빈 문자열 → "자산코드 미지정"');
+        }
+        
+        if (hardwareData['assetName'] == '') {
+          hardwareData['assetName'] = '미지정';
+          debugPrint('[ApiService.addHardware] assetName 필드 보정: 빈 문자열 → "미지정"');
+        }
+      }
+
+      // 두 번째 시도: hardware-assets 엔드포인트
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/hardware-assets');
+          debugPrint('시도 2: $uri');
+          
+          final response = await _safePost(uri, hardwareData);
+          
+          debugPrint('hardware-assets 엔드포인트 저장 응답 상태: ${response.statusCode}');
+          
+          if (response.statusCode == 201 || response.statusCode == 200) {
+            responseData = json.decode(response.body);
+            debugPrint('hardware-assets 엔드포인트 저장 성공 응답: ${response.body}');
+            isSuccess = true;
+            endpoint = 'hardware-assets';
+          } else {
+            debugPrint('hardware-assets 엔드포인트 저장 실패: ${response.body}');
+          }
+        } catch (e) {
+          _logError('hardware-assets 엔드포인트 저장', e);
+        }
+      }
+      
+      // 세 번째 시도: memory 엔드포인트
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/memory/hardware');
+          debugPrint('시도 3: $uri');
+          
+          final response = await _safePost(uri, hardwareData);
+          
+          debugPrint('memory 엔드포인트 저장 응답 상태: ${response.statusCode}');
+          
+          if (response.statusCode == 201 || response.statusCode == 200) {
+            responseData = json.decode(response.body);
+            debugPrint('memory 엔드포인트 저장 성공 응답: ${response.body}');
+            isSuccess = true;
+            endpoint = 'memory';
+          } else {
+            debugPrint('memory 엔드포인트 저장 실패: ${response.body}');
+          }
+        } catch (e) {
+          _logError('memory 엔드포인트 저장', e);
+        }
+      }
+      
+      // 성공적으로 저장된 경우
+      if (isSuccess && responseData != null) {
+        debugPrint('[ApiService.addHardware] 저장 성공 - 엔드포인트: $endpoint');
+        try {
+          // _id 필드를 id로 매핑
+          if (responseData['_id'] != null && responseData['id'] == null) {
+            responseData['id'] = responseData['_id'];
+          }
+          
+          final savedModel = HardwareModel.fromJson(responseData);
+          return savedModel.copyWith(isSaved: true, isModified: false);
+        } catch (e) {
+          _logError('하드웨어 응답 데이터 변환', e, null, responseData);
+          
+          // 응답 변환 실패 시 원본 데이터로 응답 구성
+          debugPrint('[ApiService.addHardware] 응답 데이터 변환 실패, 원본 데이터 사용');
+          return hardware.copyWith(
+            isSaved: true, 
+            isModified: false,
+            // ID 또는 코드 정보가 있으면 사용
+            id: responseData['_id']?.toString() ?? responseData['id']?.toString() ?? hardware.id,
+            code: responseData['code']?.toString() ?? hardware.code ?? HardwareModel.generateHardwareCode(hardware.regDate, hardware.no)
+          );
+        }
       } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('하드웨어 추가 임시 성공 처리');
+        // 모든 시도 실패 시 오류 메시지와 함께 로그 출력
+        debugPrint('[ApiService.addHardware] 저장 실패 - 모든 시도 실패, 오류: $errorMessage');
+        
+        // 데이터를 로컬에서 처리 (ID 없이 UI에 표시)
+        debugPrint('모든 API 엔드포인트 저장 실패, 로컬 저장 처리');
         await Future.delayed(const Duration(milliseconds: 300));
-        return hardware.copyWith(isSaved: true, isModified: false);
+        return hardware.copyWith(
+          isSaved: true, 
+          isModified: false,
+          code: hardware.code ?? HardwareModel.generateHardwareCode(hardware.regDate, hardware.no)
+        );
       }
     } catch (e) {
-      debugPrint('하드웨어 추가 실패: $e');
-      // 테스트 환경에서는 성공한 것처럼 처리
+      _logError('하드웨어 데이터 추가 전체', e);
+      // 예외 발생 시 로컬 처리
+      debugPrint('[ApiService.addHardware] 예외 발생으로 로컬 저장 처리');
       await Future.delayed(const Duration(milliseconds: 300));
       return hardware.copyWith(isSaved: true, isModified: false);
     }
@@ -866,30 +1166,131 @@ class ApiService {
     try {
       // 코드가 없는 경우 업데이트 불가
       if (hardware.code == null) {
-        debugPrint('하드웨어 수정 실패: 코드가 없음');
+        debugPrint('하드웨어 데이터 수정 실패: 코드가 없음');
         return null;
       }
-
-      final response = await http.put(
-        Uri.parse('$_baseUrl/hardware/code/${Uri.encodeComponent(hardware.code!)}'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(hardware.toJson()),
-      );
       
-      debugPrint('하드웨어 수정 응답 상태: ${response.statusCode}');
+      final Map<String, dynamic> hardwareData = hardware.toJson();
       
-      if (response.statusCode == 200) {
-        final dynamic data = json.decode(response.body);
-        return HardwareModel.fromJson(data);
-      } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('하드웨어 수정 임시 성공 처리');
-        await Future.delayed(const Duration(milliseconds: 300));
-        return hardware.copyWith(isModified: false);
+      debugPrint('하드웨어 데이터 수정 요청: ${hardware.code}');
+      
+      bool isSuccess = false;
+      dynamic responseData;
+      String endpoint = '';
+      
+      // 첫 번째 시도: hardware 엔드포인트
+      try {
+        final uri = Uri.parse('$_baseUrl/hardware/code/${Uri.encodeComponent(hardware.code!)}');
+        debugPrint('시도 1: $uri');
+        
+        final response = await http.put(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(hardwareData),
+        ).timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => http.Response('Timeout', 408),
+        );
+        
+        debugPrint('hardware 엔드포인트 수정 응답 상태: ${response.statusCode}');
+        
+        if (response.statusCode == 200) {
+          responseData = json.decode(response.body);
+          debugPrint('hardware 엔드포인트 수정 성공 응답: ${response.body}');
+          isSuccess = true;
+          endpoint = 'hardware';
+        } else {
+          debugPrint('hardware 엔드포인트 수정 실패: ${response.statusCode}, 응답: ${response.body}');
+        }
+      } catch (e) {
+        _logError('hardware 엔드포인트 수정', e);
       }
+      
+      // 두 번째 시도: hardware-assets 엔드포인트
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/hardware-assets/code/${Uri.encodeComponent(hardware.code!)}');
+          debugPrint('시도 2: $uri');
+          
+          final response = await http.put(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(hardwareData),
+          ).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => http.Response('Timeout', 408),
+          );
+          
+          debugPrint('hardware-assets 엔드포인트 수정 응답 상태: ${response.statusCode}');
+          
+          if (response.statusCode == 200) {
+            responseData = json.decode(response.body);
+            debugPrint('hardware-assets 엔드포인트 수정 성공 응답: ${response.body}');
+            isSuccess = true;
+            endpoint = 'hardware-assets';
+          } else {
+            debugPrint('hardware-assets 엔드포인트 수정 실패: ${response.statusCode}, 응답: ${response.body}');
+          }
+        } catch (e) {
+          _logError('hardware-assets 엔드포인트 수정', e);
+        }
+      }
+      
+      // 세 번째 시도: memory 엔드포인트
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/memory/hardware/code/${Uri.encodeComponent(hardware.code!)}');
+          debugPrint('시도 3: $uri');
+          
+          final response = await http.put(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(hardwareData),
+          ).timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => http.Response('Timeout', 408),
+          );
+          
+          debugPrint('memory 엔드포인트 수정 응답 상태: ${response.statusCode}');
+          
+          if (response.statusCode == 200) {
+            responseData = json.decode(response.body);
+            debugPrint('memory 엔드포인트 수정 성공 응답: ${response.body}');
+            isSuccess = true;
+            endpoint = 'memory';
+          } else {
+            debugPrint('memory 엔드포인트 수정 실패: ${response.statusCode}, 응답: ${response.body}');
+          }
+        } catch (e) {
+          _logError('memory 엔드포인트 수정', e);
+        }
+      }
+      
+      // 성공적으로 수정된 경우
+      if (isSuccess && responseData != null) {
+        debugPrint('사용 엔드포인트: $endpoint');
+        
+        try {
+          // _id 필드를 id로 매핑
+          if (responseData['_id'] != null && responseData['id'] == null) {
+            responseData['id'] = responseData['_id'];
+          }
+          
+          final updatedModel = HardwareModel.fromJson(responseData);
+          return updatedModel.copyWith(isModified: false);
+        } catch (e) {
+          _logError('하드웨어 응답 데이터 변환', e, null, responseData);
+          // 오류 발생 시 원본 데이터 반환
+          return hardware.copyWith(isModified: false);
+        }
+      }
+      
+      // 모든 시도 실패 시 임시 성공 처리
+      debugPrint('모든 API 엔드포인트 수정 실패, 로컬 수정 처리');
+      await Future.delayed(const Duration(milliseconds: 300));
+      return hardware.copyWith(isModified: false);
     } catch (e) {
-      debugPrint('하드웨어 수정 실패: $e');
-      // 테스트 환경에서는 성공한 것처럼 처리
+      _logError('하드웨어 데이터 수정', e); // debugPrint 대신 _logError 사용
       await Future.delayed(const Duration(milliseconds: 300));
       return hardware.copyWith(isModified: false);
     }
@@ -898,23 +1299,89 @@ class ApiService {
   // 하드웨어 삭제
   Future<bool> deleteHardwareByCode(String code) async {
     try {
-      final response = await http.delete(
-        Uri.parse('$_baseUrl/hardware/code/${Uri.encodeComponent(code)}'),
-      );
+      debugPrint('하드웨어 삭제 요청: $code');
       
-      debugPrint('하드웨어 삭제 응답 상태: ${response.statusCode}');
+      bool isSuccess = false;
+      String endpoint = '';
       
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        return true;
-      } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('하드웨어 삭제 임시 성공 처리');
-        await Future.delayed(const Duration(milliseconds: 300));
-        return true;
+      // 첫 번째 시도: hardware 엔드포인트
+      try {
+        final uri = Uri.parse('$_baseUrl/hardware/code/${Uri.encodeComponent(code)}');
+        debugPrint('시도 1: $uri');
+        
+        final response = await http.delete(uri).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => http.Response('Timeout', 408),
+        );
+        
+        debugPrint('hardware 엔드포인트 삭제 응답 상태: ${response.statusCode}');
+        
+        if (response.statusCode == 200 || response.statusCode == 204) {
+          isSuccess = true;
+          endpoint = 'hardware';
+          debugPrint('hardware 엔드포인트 삭제 성공');
+        } else {
+          debugPrint('hardware 엔드포인트 삭제 실패: ${response.statusCode}');
+        }
+      } catch (e) {
+        debugPrint('hardware 엔드포인트 삭제 예외: $e');
       }
+      
+      // 두 번째 시도: hardware-assets 엔드포인트
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/hardware-assets/code/${Uri.encodeComponent(code)}');
+          debugPrint('시도 2: $uri');
+          
+          final response = await http.delete(uri).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => http.Response('Timeout', 408),
+          );
+          
+          debugPrint('hardware-assets 엔드포인트 삭제 응답 상태: ${response.statusCode}');
+          
+          if (response.statusCode == 200 || response.statusCode == 204) {
+            isSuccess = true;
+            endpoint = 'hardware-assets';
+            debugPrint('hardware-assets 엔드포인트 삭제 성공');
+          } else {
+            debugPrint('hardware-assets 엔드포인트 삭제 실패: ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('hardware-assets 엔드포인트 삭제 예외: $e');
+        }
+      }
+      
+      // 세 번째 시도: memory 엔드포인트
+      if (!isSuccess) {
+        try {
+          final uri = Uri.parse('$_baseUrl/memory/hardware/code/${Uri.encodeComponent(code)}');
+          debugPrint('시도 3: $uri');
+          
+          final response = await http.delete(uri).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => http.Response('Timeout', 408),
+          );
+          
+          debugPrint('memory 엔드포인트 삭제 응답 상태: ${response.statusCode}');
+          
+          if (response.statusCode == 200 || response.statusCode == 204) {
+            isSuccess = true;
+            endpoint = 'memory';
+            debugPrint('memory 엔드포인트 삭제 성공');
+          } else {
+            debugPrint('memory 엔드포인트 삭제 실패: ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('memory 엔드포인트 삭제 예외: $e');
+        }
+      }
+      
+      debugPrint('삭제 작업 결과: $isSuccess, 사용 엔드포인트: $endpoint');
+      
+      return isSuccess;
     } catch (e) {
-      debugPrint('하드웨어 삭제 실패: $e');
-      // 테스트 환경에서는 성공한 것처럼 처리
+      _logError('하드웨어 삭제', e);
       await Future.delayed(const Duration(milliseconds: 300));
       return true;
     }

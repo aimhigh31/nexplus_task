@@ -59,9 +59,19 @@ const vocSchema = new mongoose.Schema({
   dueDate: {
     type: Date,
     required: true
+  },
+  saveStatus: {
+    type: Boolean,
+    default: true
+  },
+  modifiedStatus: {
+    type: Boolean,
+    default: false
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
 // 자동 증가 no 필드 처리를 위한 메서드
@@ -73,4 +83,13 @@ vocSchema.statics.getNextSequence = async function() {
   return 1; // 첫 번째 문서인 경우
 };
 
-module.exports = mongoose.model('Voc', vocSchema); 
+// 가상 필드 (프론트엔드 호환성을 위한 필드)
+vocSchema.virtual('isSaved').get(function() {
+  return this.saveStatus !== undefined ? this.saveStatus : true;
+});
+
+vocSchema.virtual('isModified').get(function() {
+  return this.modifiedStatus !== undefined ? this.modifiedStatus : false;
+});
+
+module.exports = mongoose.model('Voc', vocSchema, 'vocs'); 

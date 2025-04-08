@@ -208,7 +208,63 @@ function getSampleSystemUpdateData() {
   });
 }
 
+// 하드웨어 샘플 데이터 생성 함수
+function getSampleHardwareData() {
+  const assetNames = ['서버', '데스크탑 PC', '노트북', '모니터', '네트워크 스위치', '프린터', '기타'];
+  const executionTypes = ['신규구매', '사용불출', '수리중', '홀딩', '폐기'];
+  const specifications = [
+    '인텔 Xeon E5-2680 v4, 64GB RAM, 2TB SSD',
+    'AMD Ryzen 9 5900X, 32GB RAM, 1TB NVMe',
+    'Intel Core i7-12700H, 16GB RAM, 512GB SSD',
+    '32인치 4K UHD 모니터, 60Hz',
+    '24포트 기가비트 관리형 스위치',
+    'HP 컬러 레이젯 Pro MFP',
+    'Dell XPS 13, 16GB RAM, 1TB SSD'
+  ];
+
+  const sampleData = [];
+  const now = new Date();
+  
+  // 샘플 데이터 25개 생성
+  for (let i = 0; i < 25; i++) {
+    const regDate = new Date(now);
+    regDate.setDate(regDate.getDate() - (i * 5)); // 5일 간격으로
+    
+    const no = 25 - i;
+    const year = regDate.getFullYear().toString().slice(-2);
+    const month = (regDate.getMonth() + 1).toString().padStart(2, '0');
+    const day = regDate.getDate().toString().padStart(2, '0');
+    
+    const code = `HW${year}${month}${day}-${no.toString().padStart(4, '0')}`;
+    const assetName = assetNames[i % assetNames.length];
+    const specification = specifications[i % specifications.length];
+    const executionType = executionTypes[i % executionTypes.length];
+    const quantity = (i % 3) + 1;
+    
+    sampleData.push({
+      no: no,
+      regDate: regDate,
+      code: code,
+      assetCode: `A${year}${month}-${no.toString().padStart(3, '0')}`,
+      assetName: assetName,
+      specification: specification,
+      executionType: executionType,
+      quantity: quantity,
+      lotCode: `L${year}${month}-${(i + 100).toString()}`,
+      detail: `${assetName} ${specification} (${executionType})`,
+      remarks: i % 4 === 0 ? '중요 자산' : '',
+      saveStatus: true,
+      modifiedStatus: false,
+      createdAt: regDate,
+      updatedAt: regDate
+    });
+  }
+  
+  return sampleData;
+}
+
 module.exports = {
   getSampleVocData,
-  getSampleSystemUpdateData
+  getSampleSystemUpdateData,
+  getSampleHardwareData
 }; 
