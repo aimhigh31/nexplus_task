@@ -88,7 +88,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     
     try {
       final List<SystemUpdateModel> loadedData = await _apiService.getSystemUpdates();
-      
+
       if (mounted) {
         setState(() {
           _updateData = loadedData;
@@ -180,8 +180,8 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       
       // event.value가 null인 경우 처리
       final value = event.value;
-      
-      switch (field) {
+
+    switch (field) {
         case 'regDate':
           if (value is DateTime) {
             newData = oldData.copyWith(regDate: value, isModified: true);
@@ -261,36 +261,36 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       debugPrint('자동 저장 필요 없음: 변경사항 없음');
     }
   }
-  
+
   List<PlutoRow> _getPlutoRows() {
     final List<PlutoRow> rows = [];
     final pageData = _paginatedData();
     
     try {
-      for (var index = 0; index < pageData.length; index++) {
-        final data = pageData[index];
+    for (var index = 0; index < pageData.length; index++) {
+      final data = pageData[index];
         
         // 행 생성
         final PlutoRow row = PlutoRow(
-          cells: {
-            'selected': PlutoCell(value: _selectedUpdateCodes.contains(data.updateCode)),
+        cells: {
+          'selected': PlutoCell(value: _selectedUpdateCodes.contains(data.updateCode)),
             'no': PlutoCell(value: data.no.toString()),
-            'regDate': PlutoCell(value: data.regDate),
-            'updateCode': PlutoCell(value: data.updateCode ?? ''),
-            'targetSystem': PlutoCell(value: data.targetSystem),
+          'regDate': PlutoCell(value: data.regDate),
+          'updateCode': PlutoCell(value: data.updateCode ?? ''),
+          'targetSystem': PlutoCell(value: data.targetSystem),
             'developer': PlutoCell(value: data.developer ?? _developerList.first),
-            'description': PlutoCell(value: data.description),
-            'updateType': PlutoCell(value: data.updateType),
-            'assignee': PlutoCell(value: data.assignee),
-            'status': PlutoCell(value: data.status),
-            'completionDate': PlutoCell(value: data.completionDate),
-            'remarks': PlutoCell(value: data.remarks),
-          },
+          'description': PlutoCell(value: data.description),
+          'updateType': PlutoCell(value: data.updateType),
+          'assignee': PlutoCell(value: data.assignee),
+          'status': PlutoCell(value: data.status),
+          'completionDate': PlutoCell(value: data.completionDate),
+          'remarks': PlutoCell(value: data.remarks),
+        },
         );
         
         rows.add(row);
-      }
-      return rows;
+    }
+    return rows;
     } catch (e) {
       debugPrint('PlutoRow 생성 중 오류: $e');
       return [];
@@ -369,11 +369,11 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         : (_updateData.map((item) => item.no).reduce((a, b) => a > b ? a : b) + 1);
       
       // 새로운 업데이트 코드 생성
-      final now = DateTime.now();
+    final now = DateTime.now();
       final String newCode = _generateUpdateCode(now, newNo);
-      
+
       // 새 업데이트 항목 생성
-      final newUpdate = SystemUpdateModel(
+    final newUpdate = SystemUpdateModel(
         no: newNo,
         regDate: now,
         updateCode: newCode,
@@ -433,7 +433,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
             result = await _apiService.addSystemUpdate(update);
           }
           
-          if (result != null) {
+        if (result != null) {
             final index = _updateData.indexWhere((item) => item.no == update.no);
             if (index != -1) {
               // SystemUpdateModel? -> SystemUpdateModel 변환
@@ -481,7 +481,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       // 데이터 다시 로드하여 동기화 상태 확인
       await _reloadData();
       
-    } catch (e) {
+      } catch (e) {
       debugPrint('데이터 저장 중 오류: $e');
     } finally {
       setState(() => _isLoading = false);
@@ -600,13 +600,13 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       for (final code in codesToDelete) {
         try {
           debugPrint('데이터 삭제 시도: $code');
-          final success = await _apiService.deleteSystemUpdateByCode(code);
+        final success = await _apiService.deleteSystemUpdateByCode(code);
           
-          if (success) {
+        if (success) {
             debugPrint('데이터 삭제 성공: $code');
             // 성공 시 로컬 데이터에서도 삭제
-            _updateData.removeWhere((d) => d.updateCode == code);
-          } else {
+          _updateData.removeWhere((d) => d.updateCode == code);
+        } else {
             debugPrint('데이터 삭제 실패: $code');
           }
         } catch (itemError) {
@@ -617,7 +617,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       }
       
       setState(() {
-        _selectedUpdateCodes.clear();
+        _selectedUpdateCodes.clear(); 
         _selectedItems.clear();
         _hasSelectedItems = false;
         _totalPages = (_updateData.length / _rowsPerPage).ceil();
@@ -682,7 +682,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       for (var i = 0; i < _updateData.length; i++) {
         final item = _updateData[i];
         final rowIndex = i + 1;
-        
+
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex))
           .value = TextCellValue(item.no.toString());
         
@@ -710,7 +710,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rowIndex))
           .value = TextCellValue(item.completionDate != null 
               ? dateFormat.format(item.completionDate!) 
-              : '');
+                : '');
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: rowIndex))
           .value = TextCellValue(item.remarks);
@@ -730,10 +730,10 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         final fileName = '솔루션개발_${dateTimeStr}';
         
         if (kIsWeb) {
-          await FileSaver.instance.saveFile(
+        await FileSaver.instance.saveFile(
             name: fileName,
             bytes: Uint8List.fromList(excelBytes),
-            ext: 'xlsx',
+          ext: 'xlsx',
             mimeType: MimeType.microsoftExcel,
           );
         } else {
@@ -848,7 +848,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       // 그리드 새로고침
       _refreshPlutoGrid();
       
-    } catch (e) {
+          } catch (e) {
       debugPrint('필터링 데이터 로드 중 오류: $e');
     } finally {
       setState(() => _isLoading = false);
@@ -941,7 +941,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
               onChanged: (value) {
                 setState(() {
                   _selectedTargetSystem = value;
-                  _currentPage = 0;
+          _currentPage = 0;
                 });
                 _loadFilteredData();
               },
@@ -1209,7 +1209,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
+      children: [
           IconButton(
             icon: const Icon(Icons.first_page),
             onPressed: _currentPage > 0 ? () => _changePage(0) : null,
@@ -1508,41 +1508,41 @@ class DataTableWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     if (rows.isEmpty && paginatedDataLength == 0) {
       return Card(
-        elevation: 2,
-        child: Container(
-          width: double.infinity,
-          height: 300,
-          padding: const EdgeInsets.all(16),
-          child: const Center(
-            child: Text(
-              '표시할 데이터가 없습니다.',
-              style: TextStyle(fontSize: 12, color: Colors.grey)
+            elevation: 2,
+            child: Container(
+              width: double.infinity,
+              height: 300,
+              padding: const EdgeInsets.all(16),
+              child: const Center(
+                child: Text(
+                  '표시할 데이터가 없습니다.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)
+                )
+              )
             )
-          )
-        )
       );
     }
     
     return PlutoGrid(
-      columns: columns,
-      rows: rows,
-      onLoaded: onLoaded,
-      onChanged: onChanged,
+            columns: columns,
+            rows: rows,
+            onLoaded: onLoaded,
+            onChanged: onChanged,
       mode: PlutoGridMode.normal,
-      configuration: PlutoGridConfiguration(
-        style: PlutoGridStyleConfig(
-          cellTextStyle: const TextStyle(fontSize: 12),
-          columnTextStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-          rowColor: Colors.white,
-          oddRowColor: Colors.grey.shade50,
-          gridBorderColor: Colors.grey.shade300,
-          gridBackgroundColor: Colors.transparent,
-          borderColor: Colors.grey.shade300,
-          activatedColor: Colors.blue.shade100,
-          activatedBorderColor: Colors.blue.shade300,
-          inactivatedBorderColor: Colors.grey.shade300
-        )
-      )
+            configuration: PlutoGridConfiguration(
+              style: PlutoGridStyleConfig(
+                cellTextStyle: const TextStyle(fontSize: 12),
+                columnTextStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                rowColor: Colors.white,
+                oddRowColor: Colors.grey.shade50,
+                gridBorderColor: Colors.grey.shade300,
+                gridBackgroundColor: Colors.transparent,
+                borderColor: Colors.grey.shade300,
+                activatedColor: Colors.blue.shade100,
+                activatedBorderColor: Colors.blue.shade300,
+                inactivatedBorderColor: Colors.grey.shade300
+              )
+            )
     );
   }
 }

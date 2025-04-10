@@ -263,8 +263,155 @@ function getSampleHardwareData() {
   return sampleData;
 }
 
+// 소프트웨어 샘플 데이터 생성 함수
+function getSampleSoftwareData() {
+  const assetTypes = [
+    'AutoCAD', 'ZWCAD', 'NX-UZ', 'CATIA', '금형박사', '망고보드', 
+    '캡컷', 'NX', '팀뷰어', 'HADA', 'MS-OFFICE', 'WINDOWS', 
+    '아래아한글', 'VMware'
+  ];
+  
+  const assetNames = [
+    'Standard', 'Professional', 'Enterprise', 'Ultimate', 
+    'Developer', 'Basic', 'Premium'
+  ];
+  
+  const costTypes = ['연구독', '월구독', '영구'];
+  
+  const vendors = [
+    '오토데스크', '한컴', '마이크로소프트', '어도비', '지멘스', 
+    'PTC', '대성소프트웨어', 'ANSYS', 'DASSAULT', 'IBM', '한국NX'
+  ];
+  
+  const users = [
+    '홍길동', '김철수', '이영희', '박지성', '최민수', 
+    '정민준', '강지원', '조현우', '윤성민', '장민호'
+  ];
+
+  const sampleData = [];
+  const now = new Date();
+  
+  // 소프트웨어 샘플 데이터 25개 생성
+  for (let i = 0; i < 25; i++) {
+    const regDate = new Date(now);
+    regDate.setDate(regDate.getDate() - (i * 4)); // 4일 간격으로
+    
+    const no = 25 - i;
+    const year = regDate.getFullYear().toString().slice(-2);
+    const month = (regDate.getMonth() + 1).toString().padStart(2, '0');
+    
+    const code = `SWM-${year}${month}-${no.toString().padStart(3, '0')}`;
+    const assetType = assetTypes[i % assetTypes.length];
+    const assetName = assetNames[i % assetNames.length];
+    const costType = costTypes[i % costTypes.length];
+    const vendor = vendors[i % vendors.length];
+    const user = users[i % users.length];
+    
+    // 라이센스 시작일/종료일 설정 (구독형인 경우)
+    let startDate = null;
+    let endDate = null;
+    
+    if (costType !== '영구') {
+      startDate = new Date(regDate);
+      endDate = new Date(startDate);
+      
+      if (costType === '연구독') {
+        endDate.setFullYear(endDate.getFullYear() + 1);
+      } else { // 월구독
+        endDate.setMonth(endDate.getMonth() + (i % 6) + 1); // 1~6개월
+      }
+    }
+    
+    // 가격 데이터 설정
+    const setupPrice = Math.round((i + 1) * 150000 / 10000) * 10000; // 15만원 단위로 증가, 만원 단위로 반올림
+    const annualMaintenancePrice = costType === '영구' ? Math.round(setupPrice * 0.2 / 10000) * 10000 : 0; // 영구 라이센스의 경우 유지비는 구매가의 20%
+    
+    sampleData.push({
+      no: no,
+      regDate: regDate,
+      code: code,
+      assetType: assetType,
+      assetName: `${assetType} ${assetName}`,
+      specification: `버전 ${new Date().getFullYear() - (i % 3)}`,
+      setupPrice: setupPrice,
+      annualMaintenancePrice: annualMaintenancePrice,
+      costType: costType,
+      vendor: vendor,
+      licenseKey: `SW-${year}${month}-${(Math.random().toString(36).substring(2, 8)).toUpperCase()}`,
+      user: user,
+      startDate: startDate,
+      endDate: endDate,
+      remarks: i % 5 === 0 ? '중요 라이센스' : '',
+      saveStatus: true,
+      modifiedStatus: false,
+      isSaved: true,
+      isModified: false,
+      createdAt: regDate,
+      updatedAt: regDate
+    });
+  }
+  
+  return sampleData;
+}
+
+// 설비 연동관리 샘플 데이터 생성 함수
+function getSampleEquipmentConnectionData() {
+  const lines = ['SMT 라인', '조립 라인', '포장 라인', '검사 라인', '테스트 라인'];
+  const equipments = ['설비 A', '설비 B', '설비 C', '검사기 1', '검사기 2', '컨베이어'];
+  const workTypes = ['MES 자동투입', 'SPC', '설비조건데이터', '기타'];
+  const dataTypes = ['PLC', 'CSV', '기타'];
+  const connectionTypes = ['DataAgent', 'X-DAS', 'X-SCADA', '기타'];
+  const statusList = ['대기', '진행중', '완료', '보류'];
+  
+  // 20개의 샘플 데이터 생성
+  return Array.from({ length: 20 }).map((_, index) => {
+    const now = new Date();
+    const regDate = new Date(now);
+    regDate.setDate(now.getDate() - index * 5);
+    
+    const status = statusList[index % statusList.length];
+    
+    // 코드 생성 함수
+    const generateCode = (date, no) => {
+      const year = date.getFullYear().toString().substring(2);
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const seq = no.toString().padStart(3, '0');
+      return `EQC-${year}${month}-${seq}`;
+    };
+    
+    // 완료일 생성 (완료 상태인 경우에만)
+    let completionDate = null;
+    let startDate = new Date(regDate);
+    
+    if (status === '완료') {
+      completionDate = new Date(startDate);
+      completionDate.setDate(startDate.getDate() + (index % 10) + 5);
+    }
+    
+    const no = 20 - index;
+    
+    return {
+      no,
+      regDate,
+      code: generateCode(regDate, no),
+      line: lines[index % lines.length],
+      equipment: equipments[index % equipments.length],
+      workType: workTypes[index % workTypes.length],
+      dataType: dataTypes[index % dataTypes.length],
+      connectionType: connectionTypes[index % connectionTypes.length],
+      status,
+      detail: `${lines[index % lines.length]} - ${equipments[index % equipments.length]} 연동 작업 진행 중`,
+      startDate,
+      completionDate,
+      remarks: index % 3 === 0 ? '우선순위 높음' : '',
+    };
+  });
+}
+
 module.exports = {
   getSampleVocData,
   getSampleSystemUpdateData,
-  getSampleHardwareData
+  getSampleHardwareData,
+  getSampleSoftwareData,
+  getSampleEquipmentConnectionData
 }; 

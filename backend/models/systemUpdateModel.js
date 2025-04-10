@@ -62,7 +62,7 @@ const systemUpdateSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true, // createdAt, updatedAt 자동 생성
-  collection: 'system_updates', // MongoDB 컬렉션 이름 명시적 지정
+  collection: 'solution', // MongoDB 컬렉션 이름을 solution으로 수정
   suppressReservedKeysWarning: true // 예약 키워드 경고 억제
 });
 

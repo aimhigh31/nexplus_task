@@ -1,15 +1,29 @@
 import 'package:flutter/material.dart';
+import '../models/software_model.dart';
 
 class SoftwareDashboardPage extends StatelessWidget {
-  const SoftwareDashboardPage({super.key});
+  final List<SoftwareModel> softwareData;
+  
+  const SoftwareDashboardPage({super.key, required this.softwareData});
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        '소프트웨어 관리 종합 현황 페이지입니다.\n(개발 예정)',
-        style: TextStyle(fontSize: 18),
-        textAlign: TextAlign.center,
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.desktop_windows, size: 80, color: Colors.blue),
+          const SizedBox(height: 16),
+          const Text(
+            '소프트웨어 대시보드',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '등록된 소프트웨어: ${softwareData.length}개',
+            style: const TextStyle(fontSize: 18),
+          ),
+        ],
       ),
     );
   }

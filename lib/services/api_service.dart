@@ -445,12 +445,12 @@ class ApiService {
       // 두 번째 시도: 시스템 업데이트 API
       if (!isSuccess) {
         try {
-          final uri = Uri.parse('$_baseUrl/system-updates').replace(queryParameters: queryParams);
+      final uri = Uri.parse('$_baseUrl/system-updates').replace(queryParameters: queryParams);
           debugPrint('시도 2: $uri');
-          
+      
           final response = await _safeGet(uri);
-          
-          if (response.statusCode == 200) {
+      
+      if (response.statusCode == 200) {
             dataList = json.decode(response.body);
             debugPrint('system-updates 엔드포인트에서 ${dataList.length}개 데이터 로드 성공');
             isSuccess = true;
@@ -476,10 +476,10 @@ class ApiService {
             debugPrint('memory 엔드포인트에서 ${dataList.length}개 데이터 로드 성공');
             isSuccess = true;
             endpoint = 'memory';
-          } else {
+      } else {
             debugPrint('memory 엔드포인트 요청 실패: ${response.statusCode}');
-          }
-        } catch (e) {
+      }
+    } catch (e) {
           _logError('memory 엔드포인트 요청', e);
         }
       }
@@ -786,8 +786,8 @@ class ApiService {
       
       // 모든 시도 실패 시 임시 성공 처리
       debugPrint('모든 API 엔드포인트 수정 실패, 로컬 수정 처리');
-      await Future.delayed(const Duration(milliseconds: 300));
-      return update.copyWith(isModified: false);
+        await Future.delayed(const Duration(milliseconds: 300));
+        return update.copyWith(isModified: false);
     } catch (e) {
       debugPrint('솔루션 개발 데이터 수정 실패: $e');
       await Future.delayed(const Duration(milliseconds: 300));
@@ -941,12 +941,12 @@ class ApiService {
       
       // 1. 먼저 hardware 엔드포인트 시도
       try {
-        final uri = Uri.parse('$_baseUrl/hardware').replace(queryParameters: queryParams);
+      final uri = Uri.parse('$_baseUrl/hardware').replace(queryParameters: queryParams);
         debugPrint('하드웨어 데이터 로드 시도 1: $uri');
-        
+      
         final response = await _safeGet(uri);
-        
-        if (response.statusCode == 200) {
+      
+      if (response.statusCode == 200) {
           final jsonData = json.decode(response.body) as List<dynamic>;
           result = jsonData.map((item) => HardwareModel.fromJson(item)).toList();
           debugPrint('hardware 엔드포인트에서 데이터 ${result.length}개 로드됨');
@@ -1157,7 +1157,7 @@ class ApiService {
       // 예외 발생 시 로컬 처리
       debugPrint('[ApiService.addHardware] 예외 발생으로 로컬 저장 처리');
       await Future.delayed(const Duration(milliseconds: 300));
-      return hardware.copyWith(isSaved: true, isModified: false);
+          return hardware.copyWith(isSaved: true, isModified: false);
     }
   }
   
@@ -1199,10 +1199,10 @@ class ApiService {
           debugPrint('hardware 엔드포인트 수정 성공 응답: ${response.body}');
           isSuccess = true;
           endpoint = 'hardware';
-        } else {
+      } else {
           debugPrint('hardware 엔드포인트 수정 실패: ${response.statusCode}, 응답: ${response.body}');
-        }
-      } catch (e) {
+      }
+    } catch (e) {
         _logError('hardware 엔드포인트 수정', e);
       }
       
@@ -1391,31 +1391,34 @@ class ApiService {
   Future<List<SoftwareModel>> getSoftwareData({
     String? search,
     String? assetCode,
+    String? assetType,
     String? assetName,
-    String? executionType,
+    String? costType,
     DateTime? startDate,
     DateTime? endDate,
-    DateTime? contractStartDate,
-    DateTime? contractEndDate,
   }) async {
     try {
       // 쿼리 파라미터 구성
-      final Map<String, String> queryParams = {};
+      final queryParams = <String, String>{};
       
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
       }
       
-      if (assetCode != null) {
+      if (assetCode != null && assetCode.isNotEmpty) {
         queryParams['assetCode'] = assetCode;
       }
       
-      if (assetName != null) {
+      if (assetType != null && assetType.isNotEmpty) {
+        queryParams['assetType'] = assetType;
+      }
+      
+      if (assetName != null && assetName.isNotEmpty) {
         queryParams['assetName'] = assetName;
       }
       
-      if (executionType != null) {
-        queryParams['executionType'] = executionType;
+      if (costType != null && costType.isNotEmpty) {
+        queryParams['costType'] = costType;
       }
       
       if (startDate != null) {
@@ -1426,68 +1429,116 @@ class ApiService {
         queryParams['endDate'] = endDate.toIso8601String();
       }
       
-      if (contractStartDate != null) {
-        queryParams['contractStartDate'] = contractStartDate.toIso8601String();
+      // 3단계 시도: 3개의 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/solution-development/software',
+        '/software',
+        '/memory/software'
+      ];
+      
+      List<dynamic>? dataList;
+      String successPath = "";
+      int statusCode = 0;
+      String responseBody = "";
+      
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: queryParams);
+          debugPrint('소프트웨어 데이터 로드 URL: $uri');
+          
+          final response = await _safeGet(uri);
+          statusCode = response.statusCode;
+          responseBody = response.body;
+          
+          if (response.statusCode == 200) {
+            dataList = json.decode(response.body);
+            successPath = path;
+            debugPrint('소프트웨어 데이터 로드 성공 (사용 엔드포인트: $path)');
+            break;
+          } else {
+            debugPrint('소프트웨어 데이터 로드 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('소프트웨어 데이터 로드 시도 실패 (엔드포인트: $path): $e');
+        }
       }
       
-      if (contractEndDate != null) {
-        queryParams['contractEndDate'] = contractEndDate.toIso8601String();
-      }
-      
-      // URL 구성
-      final uri = Uri.parse('$_baseUrl/software').replace(queryParameters: queryParams);
-      debugPrint('소프트웨어 데이터 요청 URL: $uri');
-      
-      final response = await http.get(uri);
-      
-      if (response.statusCode == 200) {
-        final List<dynamic> dataList = json.decode(response.body);
-        debugPrint('소프트웨어 데이터 ${dataList.length}개 성공적으로 로드');
+      if (dataList != null) {
+        final List<SoftwareModel> convertedData = [];
+        for (var data in dataList) {
+          try {
+            // _id 필드를 id로 매핑 (MongoDB 응답 처리)
+            if (data['_id'] != null && data['id'] == null) {
+              data['id'] = data['_id'];
+            }
+            
+            final software = SoftwareModel.fromJson(data);
+            convertedData.add(software.copyWith(isSaved: true, isModified: false));
+          } catch (e) {
+            _logError('소프트웨어 데이터 변환', e, null, data);
+          }
+        }
         
-        return dataList.map((data) {
-          final software = SoftwareModel.fromJson(data);
-          return software.copyWith(isModified: false);
-        }).toList();
+        return convertedData;
       } else {
-        debugPrint('소프트웨어 데이터 로드 실패: ${response.statusCode}, ${response.body}');
-        // 테스트용 모의 데이터 반환 (실제 API 연결 전)
-        return _getMockSoftwareData();
+        _logError('소프트웨어 데이터 로드', '상태 코드: $statusCode', 'API 응답: $responseBody');
+        // 개발 환경에서는 모의 데이터 반환
+        if (kDebugMode) {
+          await Future.delayed(const Duration(milliseconds: 300));
+          return _getMockSoftwareData();
+        }
+        return []; // 빈 배열 반환
       }
     } catch (e) {
-      debugPrint('소프트웨어 데이터 로드 중 예외 발생: $e');
-      // 테스트용 모의 데이터 반환 (실제 API 연결 전)
-      return _getMockSoftwareData();
+      _logError('소프트웨어 데이터 로드', e);
+      // 개발 환경에서는 모의 데이터 반환
+      if (kDebugMode) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        return _getMockSoftwareData();
+      }
+      return []; // 빈 배열 반환
     }
   }
   
   // 모의 소프트웨어 데이터 생성 (API 연결 전 테스트용)
   List<SoftwareModel> _getMockSoftwareData() {
-    final List<String> assetNames = ['Windows', 'MS Office', 'AutoCAD', 'Adobe Creative Cloud', 'Oracle', 'SQL Server', 'SAP', 'VMware', 'Anti-Virus'];
-    final List<String> specifications = ['Enterprise', 'Professional', 'Standard', 'Premium', 'Developer', 'Ultimate'];
-    final List<String> executionTypes = ['신규구매', '라이선스 연장', '업그레이드', '유지보수', '만료'];
+    final List<String> assetTypes = ['AutoCAD', 'ZWCAD', 'NX-UZ', 'CATIA', '금형박사', '망고보드', '캡컷', 'NX', '팀뷰어', 'HADA', 'MS-OFFICE', 'WINDOWS', '아래아한글', 'VMware'];
+    final List<String> assetNames = ['Standard', 'Professional', 'Enterprise', 'Ultimate', 'Developer'];
+    final List<String> specifications = ['v2023', 'v10.5', '2022R2', '365', '2021'];
+    final List<String> costTypes = ['연구독', '월구독', '영구'];
+    final List<String> vendors = ['오토데스크', '한컴', '마이크로소프트', '어도비', '지멘스', 'PTC', '대성소프트웨어'];
     
     return List.generate(25, (index) {
       final now = DateTime.now();
       final regDate = now.subtract(Duration(days: index * 3));
+      final assetType = assetTypes[index % assetTypes.length];
       final assetName = assetNames[index % assetNames.length];
       final unitPrice = (1000.0 + (index * 500.0));
       final quantity = (index % 5) + 1;
+      final setupPrice = 5000.0 + (index * 1000.0);
+      final annualMaintenancePrice = setupPrice * 0.2;
       
       return SoftwareModel(
         no: 25 - index,
         regDate: regDate,
-        code: 'SW-${regDate.year}${regDate.month.toString().padLeft(2, '0')}${regDate.day.toString().padLeft(2, '0')}-${(25 - index).toString().padLeft(3, '0')}',
+        code: SoftwareModel.generateSoftwareCode(regDate, 25 - index),
         assetCode: 'S${(10000 + index * 3).toString()}',
+        assetType: assetType,
         assetName: assetName,
         specification: specifications[index % specifications.length],
-        executionType: executionTypes[index % executionTypes.length],
+        setupPrice: setupPrice,
+        annualMaintenancePrice: annualMaintenancePrice,
+        costType: costTypes[index % costTypes.length],
+        vendor: vendors[index % vendors.length],
+        licenseKey: 'LIC-${(100000 + index * 7).toString()}-${(200 + index).toString()}',
+        user: '사용자${(index % 5) + 1}',
         quantity: quantity,
         unitPrice: unitPrice,
         totalPrice: unitPrice * quantity,
         lotCode: 'L${(20000 + index * 7).toString()}',
-        detail: '$assetName ${specifications[index % specifications.length]} 라이선스',
-        contractStartDate: regDate,
-        contractEndDate: regDate.add(Duration(days: 365 * (index % 3 + 1))),
+        detail: '$assetType $assetName ${specifications[index % specifications.length]} 라이선스',
+        startDate: regDate,
+        endDate: regDate.add(Duration(days: 365 * (index % 3 + 1))),
         remarks: (index % 4 == 0) ? '조기 갱신 필요' : '',
       );
     });
@@ -1496,29 +1547,54 @@ class ApiService {
   // 소프트웨어 추가
   Future<SoftwareModel?> addSoftware(SoftwareModel software) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/software'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(software.toJson()),
-      );
+      // 3단계 시도: 3개의 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/solution-development/software',
+        '/software',
+        '/memory/software'
+      ];
       
-      debugPrint('소프트웨어 추가 응답 상태: ${response.statusCode}');
+      SoftwareModel? result;
+      String successPath = "";
+      
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path');
+          debugPrint('소프트웨어 데이터 추가 시도 URL: $uri');
+          
+          final response = await _safePost(uri, software.toJson());
       
       if (response.statusCode == 201 || response.statusCode == 200) {
         final dynamic data = json.decode(response.body);
-        return SoftwareModel.fromJson(data);
+            result = SoftwareModel.fromJson(data);
+            successPath = path;
+            debugPrint('소프트웨어 추가 성공 (사용 엔드포인트: $path)');
+            break;
       } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('소프트웨어 추가 임시 성공 처리');
+            debugPrint('소프트웨어 추가 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('소프트웨어 추가 시도 실패 (엔드포인트: $path): $e');
+        }
+      }
+      
+      if (result != null) {
+        return result;
+      } else if (kDebugMode) {
+        // 개발 환경에서는 성공한 것처럼 처리
         await Future.delayed(const Duration(milliseconds: 300));
-        return software.copyWith(isModified: false);
+        return software.copyWith(isSaved: true, isModified: false);
       }
     } catch (e) {
-      debugPrint('소프트웨어 추가 실패: $e');
+      _logError('소프트웨어 추가', e);
       // 테스트 환경에서는 성공한 것처럼 처리
+      if (kDebugMode) {
       await Future.delayed(const Duration(milliseconds: 300));
-      return software.copyWith(isModified: false);
+        return software.copyWith(isSaved: true, isModified: false);
+      }
     }
+    
+    return null;
   }
   
   // 소프트웨어 수정
@@ -1526,58 +1602,110 @@ class ApiService {
     try {
       // 코드가 없는 경우 업데이트 불가
       if (software.code == null) {
-        debugPrint('소프트웨어 수정 실패: 코드가 없음');
+        _logError('소프트웨어 수정', '코드가 없음');
         return null;
       }
 
-      final response = await http.put(
-        Uri.parse('$_baseUrl/software/code/${Uri.encodeComponent(software.code!)}'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(software.toJson()),
-      );
+      // 3단계 시도: 3개의 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/solution-development/software',
+        '/software',
+        '/memory/software'
+      ];
       
-      debugPrint('소프트웨어 수정 응답 상태: ${response.statusCode}');
+      SoftwareModel? result;
+      String successPath = "";
+      
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path/code/${Uri.encodeComponent(software.code!)}');
+          debugPrint('소프트웨어 데이터 수정 시도 URL: $uri');
+          
+          final response = await _safePut(uri, software.toJson());
       
       if (response.statusCode == 200) {
         final dynamic data = json.decode(response.body);
-        return SoftwareModel.fromJson(data);
+            result = SoftwareModel.fromJson(data);
+            successPath = path;
+            debugPrint('소프트웨어 수정 성공 (사용 엔드포인트: $path)');
+            break;
       } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('소프트웨어 수정 임시 성공 처리');
+            debugPrint('소프트웨어 수정 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('소프트웨어 수정 시도 실패 (엔드포인트: $path): $e');
+        }
+      }
+      
+      if (result != null) {
+        return result;
+      } else if (kDebugMode) {
+        // 개발 환경에서는 성공한 것처럼 처리
         await Future.delayed(const Duration(milliseconds: 300));
-        return software.copyWith(isModified: false);
+        return software.copyWith(isSaved: true, isModified: false);
       }
     } catch (e) {
-      debugPrint('소프트웨어 수정 실패: $e');
+      _logError('소프트웨어 수정', e);
       // 테스트 환경에서는 성공한 것처럼 처리
+      if (kDebugMode) {
       await Future.delayed(const Duration(milliseconds: 300));
-      return software.copyWith(isModified: false);
+        return software.copyWith(isSaved: true, isModified: false);
+      }
     }
+    
+    return null;
   }
   
   // 소프트웨어 삭제
   Future<bool> deleteSoftwareByCode(String code) async {
     try {
-      final response = await http.delete(
-        Uri.parse('$_baseUrl/software/code/${Uri.encodeComponent(code)}'),
-      );
+      // 3단계 시도: 3개의 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/solution-development/software',
+        '/software',
+        '/memory/software'
+      ];
       
-      debugPrint('소프트웨어 삭제 응답 상태: ${response.statusCode}');
+      bool success = false;
+      String successPath = "";
       
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        return true;
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path/code/${Uri.encodeComponent(code)}');
+          debugPrint('소프트웨어 데이터 삭제 시도 URL: $uri');
+          
+          final response = await _safeDelete(uri);
+          
+          if (response.statusCode == 200) {
+            success = true;
+            successPath = path;
+            debugPrint('소프트웨어 삭제 성공 (사용 엔드포인트: $path)');
+            break;
       } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('소프트웨어 삭제 임시 성공 처리');
+            debugPrint('소프트웨어 삭제 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('소프트웨어 삭제 시도 실패 (엔드포인트: $path): $e');
+        }
+      }
+      
+      if (success) {
+        return true;
+      } else if (kDebugMode) {
+        // 개발 환경에서는 성공한 것처럼 처리
         await Future.delayed(const Duration(milliseconds: 300));
         return true;
       }
     } catch (e) {
-      debugPrint('소프트웨어 삭제 실패: $e');
+      _logError('소프트웨어 삭제', e);
       // 테스트 환경에서는 성공한 것처럼 처리
+      if (kDebugMode) {
       await Future.delayed(const Duration(milliseconds: 300));
       return true;
+      }
     }
+    
+    return false;
   }
   
   // 설비 연동 데이터 조회
@@ -1632,161 +1760,250 @@ class ApiService {
         queryParams['endDate'] = endDate.toIso8601String();
       }
       
-      // URL 구성
-      final uri = Uri.parse('$_baseUrl/equipment-connections').replace(queryParameters: queryParams);
-      debugPrint('설비 연동 데이터 요청 URL: $uri');
+      // 3단계 시도: 다양한 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/equipment-connections',
+        '/memory/equipment-connections'
+      ];
       
-      final response = await http.get(uri);
+      List<dynamic>? dataList;
+      String successPath = "";
       
-      if (response.statusCode == 200) {
-        final List<dynamic> dataList = json.decode(response.body);
-        debugPrint('설비 연동 데이터 ${dataList.length}개 성공적으로 로드');
-        
-        return dataList.map((data) {
-          final connection = EquipmentConnectionModel.fromJson(data);
-          return connection.copyWith(isModified: false);
-        }).toList();
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: queryParams);
+          debugPrint('설비 연동 데이터 요청 URL: $uri');
+          
+          final response = await _safeGet(uri);
+          
+          if (response.statusCode == 200) {
+            dataList = json.decode(response.body);
+            successPath = path;
+            debugPrint('설비 연동 데이터 로드 성공 (사용 엔드포인트: $path)');
+            break;
+          } else {
+            debugPrint('설비 연동 데이터 로드 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('설비 연동 데이터 로드 시도 실패 (엔드포인트: $path): $e');
+        }
+      }
+      
+      if (dataList != null) {
+        final List<EquipmentConnectionModel> connections = [];
+        for (var data in dataList) {
+          try {
+            // MongoDB _id 필드를 처리
+            if (data['_id'] != null && data['id'] == null) {
+              data['id'] = data['_id'];
+            }
+            connections.add(EquipmentConnectionModel.fromJson(data));
+          } catch (e) {
+            debugPrint('설비 연동 데이터 변환 오류: $e');
+          }
+        }
+        return connections;
       } else {
-        debugPrint('설비 연동 데이터 로드 실패: ${response.statusCode}, ${response.body}');
-        // 테스트용 모의 데이터 반환 (API 연결 전)
-        return _getMockEquipmentConnectionData();
+        // 데이터 로드 실패 시 빈 배열 반환
+        return [];
       }
     } catch (e) {
-      debugPrint('설비 연동 데이터 로드 중 예외 발생: $e');
-      // 테스트용 모의 데이터 반환 (API 연결 전)
-      return _getMockEquipmentConnectionData();
+      debugPrint('설비 연동 데이터 조회 오류: $e');
+      return [];
     }
   }
   
-  // 설비 연동 데이터 생성
-  Future<bool> createEquipmentConnection(EquipmentConnectionModel model) async {
+  // 설비 연동 데이터 추가
+  Future<EquipmentConnectionModel?> addEquipmentConnection(EquipmentConnectionModel connection) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/equipment-connections'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(model.toJson()),
-      );
+      debugPrint('설비 연동 데이터 추가 시작: ${connection.code}, ${connection.line}, ${connection.equipment}');
       
-      debugPrint('설비 연동 데이터 생성 응답 상태: ${response.statusCode}');
+      // MongoDB 저장을 위해 일부 필드 정리
+      final Map<String, dynamic> requestData = connection.toJson();
       
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        return true;
+      // 필요한 경우 날짜 형식 확인
+      if (connection.regDate != null) {
+        requestData['regDate'] = connection.regDate.toIso8601String();
+      }
+      if (connection.startDate != null) {
+        requestData['startDate'] = connection.startDate?.toIso8601String();
       } else {
-        // API가 없을 경우 임시 성공 처리 (테스트용)
-        debugPrint('설비 연동 데이터 생성 임시 성공 처리');
-        await Future.delayed(const Duration(milliseconds: 300));
-        return true;
+        // null인 경우 필드 제거
+        requestData.remove('startDate');
+      }
+      if (connection.completionDate != null) {
+        requestData['completionDate'] = connection.completionDate?.toIso8601String();
+      } else {
+        // null인 경우 필드 제거
+        requestData.remove('completionDate');
+      }
+      
+      // 디버깅을 위한 요청 데이터 출력
+      debugPrint('설비 연동 데이터 추가 요청: ${json.encode(requestData)}');
+      
+      // 3단계 시도: 다양한 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/equipment-connections',
+        '/memory/equipment-connections'
+      ];
+      
+      EquipmentConnectionModel? result;
+      
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path');
+          debugPrint('설비 연동 데이터 추가 시도 URL: $uri');
+          
+          final response = await http.post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(requestData),
+          );
+          
+          debugPrint('설비 연동 데이터 추가 응답 코드: ${response.statusCode}');
+          
+          if (response.statusCode == 201 || response.statusCode == 200) {
+            final data = json.decode(response.body);
+            debugPrint('설비 연동 데이터 추가 응답: ${response.body}');
+            result = EquipmentConnectionModel.fromJson(data);
+            debugPrint('설비 연동 데이터 추가 성공 (사용 엔드포인트: $path)');
+            break;
+          } else {
+            debugPrint('설비 연동 데이터 추가 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}, 응답: ${response.body}');
+          }
+        } catch (e) {
+          debugPrint('설비 연동 데이터 추가 시도 실패 (엔드포인트: $path): $e');
+        }
+      }
+      
+      if (result != null) {
+        debugPrint('설비 연동 데이터 추가 최종 성공: ${result.code}');
+        return result;
+      } else {
+        debugPrint('설비 연동 데이터 추가 최종 실패');
+        return null;
       }
     } catch (e) {
-      debugPrint('설비 연동 데이터 생성 실패: $e');
-      // 테스트 환경에서는 성공한 것처럼 처리
-      await Future.delayed(const Duration(milliseconds: 300));
-      return true;
+      debugPrint('설비 연동 데이터 추가 오류: $e');
+      return null;
     }
   }
   
-  // 설비 연동 데이터 업데이트
-  Future<bool> updateEquipmentConnection(EquipmentConnectionModel model) async {
+  // 설비 연동 데이터 수정
+  Future<EquipmentConnectionModel?> updateEquipmentConnection(EquipmentConnectionModel connection) async {
     try {
-      if (model.code == null) {
-        debugPrint('설비 연동 데이터 업데이트 실패: 코드가 없음');
-        return false;
+      if (connection.code == null) {
+        debugPrint('설비 연동 데이터 수정 오류: 코드 없음');
+        return null;
       }
-
-      final response = await http.put(
-        Uri.parse('$_baseUrl/equipment-connections/code/${Uri.encodeComponent(model.code!)}'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(model.toJson()),
-      );
       
-      debugPrint('설비 연동 데이터 업데이트 응답 상태: ${response.statusCode}');
+      debugPrint('설비 연동 데이터 수정 시작: ${connection.code}');
       
-      if (response.statusCode == 200) {
-        return true;
+      // MongoDB 저장을 위해 일부 필드 정리
+      final Map<String, dynamic> requestData = connection.toJson();
+      
+      // 필요한 경우 날짜 형식 확인
+      if (connection.regDate != null) {
+        requestData['regDate'] = connection.regDate.toIso8601String();
+      }
+      if (connection.startDate != null) {
+        requestData['startDate'] = connection.startDate?.toIso8601String();
       } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('설비 연동 데이터 업데이트 임시 성공 처리');
-        await Future.delayed(const Duration(milliseconds: 300));
-        return true;
+        // null인 경우 필드 제거
+        requestData.remove('startDate');
+      }
+      if (connection.completionDate != null) {
+        requestData['completionDate'] = connection.completionDate?.toIso8601String();
+      } else {
+        // null인 경우 필드 제거
+        requestData.remove('completionDate');
+      }
+      
+      // 디버깅을 위한 요청 데이터 출력
+      debugPrint('설비 연동 데이터 수정 요청: ${json.encode(requestData)}');
+      
+      // 3단계 시도: 다양한 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/equipment-connections',
+        '/memory/equipment-connections'
+      ];
+      
+      EquipmentConnectionModel? result;
+      
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path/code/${Uri.encodeComponent(connection.code!)}');
+          debugPrint('설비 연동 데이터 수정 시도 URL: $uri');
+          
+          final response = await http.put(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(requestData),
+          );
+          
+          debugPrint('설비 연동 데이터 수정 응답 코드: ${response.statusCode}');
+          
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            debugPrint('설비 연동 데이터 수정 응답: ${response.body}');
+            result = EquipmentConnectionModel.fromJson(data);
+            debugPrint('설비 연동 데이터 수정 성공 (사용 엔드포인트: $path)');
+            break;
+          } else {
+            debugPrint('설비 연동 데이터 수정 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}, 응답: ${response.body}');
+          }
+        } catch (e) {
+          debugPrint('설비 연동 데이터 수정 시도 실패 (엔드포인트: $path): $e');
+        }
+      }
+      
+      if (result != null) {
+        debugPrint('설비 연동 데이터 수정 최종 성공: ${result.code}');
+        return result;
+      } else {
+        debugPrint('설비 연동 데이터 수정 최종 실패');
+        return null;
       }
     } catch (e) {
-      debugPrint('설비 연동 데이터 업데이트 실패: $e');
-      // 테스트 환경에서는 성공한 것처럼 처리
-      await Future.delayed(const Duration(milliseconds: 300));
-      return true;
+      debugPrint('설비 연동 데이터 수정 오류: $e');
+      return null;
     }
   }
   
   // 설비 연동 데이터 삭제
-  Future<bool> deleteEquipmentConnectionByCode(String code) async {
+  Future<bool> deleteEquipmentConnection(String code) async {
     try {
-      final response = await http.delete(
-        Uri.parse('$_baseUrl/equipment-connections/code/${Uri.encodeComponent(code)}'),
-      );
+      // 3단계 시도: 다양한 엔드포인트로 시도
+      final List<String> endpointPaths = [
+        '/equipment-connections',
+        '/memory/equipment-connections'
+      ];
       
-      debugPrint('설비 연동 데이터 삭제 응답 상태: ${response.statusCode}');
+      bool success = false;
       
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        return true;
-      } else {
-        // API가 없거나 실패한 경우 임시 성공 처리 (테스트용)
-        debugPrint('설비 연동 데이터 삭제 임시 성공 처리');
-        await Future.delayed(const Duration(milliseconds: 300));
-        return true;
+      for (final path in endpointPaths) {
+        try {
+          final uri = Uri.parse('$_baseUrl$path/code/${Uri.encodeComponent(code)}');
+          debugPrint('설비 연동 데이터 삭제 시도 URL: $uri');
+          
+          final response = await _safeDelete(uri);
+          
+          if (response.statusCode == 200) {
+            success = true;
+            debugPrint('설비 연동 데이터 삭제 성공 (사용 엔드포인트: $path)');
+            break;
+          } else {
+            debugPrint('설비 연동 데이터 삭제 시도 실패 (엔드포인트: $path): 상태 코드 ${response.statusCode}');
+          }
+        } catch (e) {
+          debugPrint('설비 연동 데이터 삭제 시도 실패 (엔드포인트: $path): $e');
+        }
       }
+      
+      return success;
     } catch (e) {
-      debugPrint('설비 연동 데이터 삭제 실패: $e');
-      // 테스트 환경에서는 성공한 것처럼 처리
-      await Future.delayed(const Duration(milliseconds: 300));
-      return true;
+      debugPrint('설비 연동 데이터 삭제 오류: $e');
+      return false;
     }
-  }
-  
-  // 모의 설비 연동 데이터 생성 (API 연결 전 테스트용)
-  List<EquipmentConnectionModel> _getMockEquipmentConnectionData() {
-    final lines = ['라인1', '라인2', '라인3', '라인4', '라인5'];
-    final equipments = ['프레스', '사출기', '검사기', '조립기', '도장기', '절단기', '용접기', '포장기'];
-    final workTypes = EquipmentConnectionModel.workTypes;
-    final dataTypes = EquipmentConnectionModel.dataTypes;
-    final connectionTypes = EquipmentConnectionModel.connectionTypes;
-    final statuses = EquipmentConnectionModel.statusTypes;
-    
-    final now = DateTime.now();
-    final random = Random();
-    final List<EquipmentConnectionModel> mockData = [];
-    
-    for (var i = 0; i < 50; i++) {
-      final regDate = now.subtract(Duration(days: random.nextInt(365)));
-      final startDate = regDate.add(Duration(days: random.nextInt(30)));
-      final completionDate = random.nextBool() 
-          ? startDate.add(Duration(days: random.nextInt(90) + 1))
-          : null;
-      
-      final code = 'EC-${regDate.year}${regDate.month.toString().padLeft(2, '0')}${regDate.day.toString().padLeft(2, '0')}-${(i+1).toString().padLeft(3, '0')}';
-      final line = lines[random.nextInt(lines.length)];
-      final equipment = equipments[random.nextInt(equipments.length)];
-      final workType = workTypes[random.nextInt(workTypes.length)];
-      final dataType = dataTypes[random.nextInt(dataTypes.length)];
-      final connectionType = connectionTypes[random.nextInt(connectionTypes.length)];
-      final status = statuses[random.nextInt(statuses.length)];
-      
-      mockData.add(EquipmentConnectionModel(
-        no: i + 1,
-        regDate: regDate,
-        code: code,
-        line: line,
-        equipment: equipment,
-        workType: workType,
-        dataType: dataType,
-        connectionType: connectionType,
-        status: status,
-        detail: '설비 ${equipment} $connectionType 연동 - $workType 데이터 수집',
-        startDate: startDate,
-        completionDate: completionDate,
-        remarks: completionDate != null ? '완료' : '진행중인 작업',
-      ));
-    }
-    
-    return mockData;
   }
 } 

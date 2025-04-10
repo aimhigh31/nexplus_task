@@ -92,4 +92,4 @@ vocSchema.virtual('isModified').get(function() {
   return this.modifiedStatus !== undefined ? this.modifiedStatus : false;
 });
 
-module.exports = mongoose.model('Voc', vocSchema, 'vocs'); 
+module.exports = mongoose.model('Voc', vocSchema, 'voc'); 

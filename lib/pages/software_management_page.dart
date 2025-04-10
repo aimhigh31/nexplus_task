@@ -25,7 +25,7 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
   late TabController _tabController;
   final ApiService _apiService = ApiService();
 
-  final List<String> _softwareTabs = ['데이터 관리', '종합현황'];
+  final List<String> _softwareTabs = ['데이터관리', '종합현황'];
 
   // 페이지네이션
   int _currentPage = 0;
@@ -34,10 +34,32 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
 
   // 검색 및 필터
   final TextEditingController _searchController = TextEditingController();
-  final List<String> _assetNames = ['Windows', 'MS Office', 'AutoCAD', 'Adobe Creative Cloud', 'Oracle', 'SQL Server', 'SAP', 'VMware', 'Anti-Virus', '기타'];
-  final List<String> _executionTypes = ['신규구매', '라이선스 연장', '업그레이드', '유지보수', '만료'];
-  String? _selectedAssetName;
-  String? _selectedExecutionType;
+  
+  // 자산분류 목록
+  final List<String> _assetTypes = [
+    'AutoCAD', 'ZWCAD', 'NX-UZ', 'CATIA', '금형박사', '망고보드', 
+    '캡컷', 'NX', '팀뷰어', 'HADA', 'MS-OFFICE', 'WINDOWS', 
+    '아래아한글', 'VMware'
+  ];
+  
+  // 자산명 목록
+  final List<String> _assetNames = [
+    'Standard', 'Professional', 'Enterprise', 'Ultimate', 
+    'Developer', 'Basic', 'Premium'
+  ];
+  
+  // 비용형태 목록
+  final List<String> _costTypes = ['연구독', '월구독', '영구'];
+  
+  // 거래업체 목록
+  final List<String> _vendors = [
+    '오토데스크', '한컴', '마이크로소프트', '어도비', '지멘스', 
+    'PTC', '대성소프트웨어', 'ANSYS', 'DASSAULT', 'IBM', '한국NX'
+  ];
+  
+  // 필터 선택 상태
+  String? _selectedAssetType;
+  String? _selectedCostType;
 
   // 데이터
   List<SoftwareModel> _softwareData = [];
@@ -71,8 +93,8 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
     try {
       final softwareData = await _apiService.getSoftwareData(
         search: _searchController.text.isNotEmpty ? _searchController.text : null,
-        assetName: _selectedAssetName,
-        executionType: _selectedExecutionType,
+        assetType: _selectedAssetType,
+        costType: _selectedCostType,
       );
       
       if (mounted) {
@@ -117,228 +139,377 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
   }
 
   void _handleCellChanged(PlutoGridOnChangedEvent event) {
-    final field = event.column.field;
-    if (field == 'selected') return;
-    final code = event.row.cells['code']?.value as String? ?? '';
-    if (code.isEmpty) return;
-    final dataIdx = _softwareData.indexWhere((d) => d.code == code);
-    if (dataIdx == -1) return;
-
-    final currentData = _softwareData[dataIdx];
-    SoftwareModel updatedData;
-
-    switch (field) {
-      case 'regDate': updatedData = currentData.copyWith(regDate: event.value, isModified: true); break;
-      case 'assetCode': updatedData = currentData.copyWith(assetCode: event.value, isModified: true); break;
-      case 'assetName': updatedData = currentData.copyWith(assetName: event.value, isModified: true); break;
-      case 'specification': updatedData = currentData.copyWith(specification: event.value, isModified: true); break;
-      case 'executionType': updatedData = currentData.copyWith(executionType: event.value, isModified: true); break;
-      case 'quantity': 
-        final quantityValue = int.tryParse(event.value.toString()) ?? currentData.quantity;
-        updatedData = currentData.copyWith(quantity: quantityValue, isModified: true); 
-        break;
-      case 'unitPrice': 
-        final priceValue = double.tryParse(event.value.toString()) ?? currentData.unitPrice;
-        updatedData = currentData.copyWith(
-          unitPrice: priceValue, 
-          totalPrice: priceValue * currentData.quantity,
-          isModified: true
-        ); 
-        break;
-      case 'totalPrice': 
-        final totalValue = double.tryParse(event.value.toString()) ?? currentData.totalPrice;
-        updatedData = currentData.copyWith(totalPrice: totalValue, isModified: true); 
-        break;
-      case 'lotCode': updatedData = currentData.copyWith(lotCode: event.value, isModified: true); break;
-      case 'detail': updatedData = currentData.copyWith(detail: event.value, isModified: true); break;
-      case 'contractStartDate': updatedData = currentData.copyWith(contractStartDate: event.value, isModified: true); break;
-      case 'contractEndDate': updatedData = currentData.copyWith(contractEndDate: event.value, isModified: true); break;
-      case 'remarks': updatedData = currentData.copyWith(remarks: event.value, isModified: true); break;
-      default: return;
+    final changedRow = event.row;
+    final int rowIdx = _gridStateManager!.rows.indexOf(changedRow);
+    
+    if (rowIdx >= 0 && rowIdx < _softwareData.length) {
+      final software = _softwareData[rowIdx];
+      SoftwareModel updatedSoftware;
+      
+      switch (event.column.field) {
+        case 'regDate':
+          updatedSoftware = software.copyWith(regDate: event.value ?? DateTime.now());
+          break;
+        case 'assetType':
+          updatedSoftware = software.copyWith(assetType: event.value ?? '');
+          break;
+        case 'assetName':
+          updatedSoftware = software.copyWith(assetName: event.value ?? '');
+          break;
+        case 'specification':
+          updatedSoftware = software.copyWith(specification: event.value ?? '');
+          break;
+        case 'setupPrice':
+          updatedSoftware = software.copyWith(setupPrice: event.value ?? 0);
+          break;
+        case 'annualMaintenancePrice':
+          updatedSoftware = software.copyWith(annualMaintenancePrice: event.value ?? 0);
+          break;
+        case 'costType':
+          updatedSoftware = software.copyWith(costType: event.value ?? '');
+          break;
+        case 'vendor':
+          updatedSoftware = software.copyWith(vendor: event.value ?? '');
+          break;
+        case 'licenseKey':
+          updatedSoftware = software.copyWith(licenseKey: event.value ?? '');
+          break;
+        case 'user':
+          updatedSoftware = software.copyWith(user: event.value ?? '');
+          break;
+        case 'startDate':
+          updatedSoftware = software.copyWith(startDate: event.value);
+          break;
+        case 'endDate':
+          updatedSoftware = software.copyWith(endDate: event.value);
+          break;
+        case 'remarks':
+          updatedSoftware = software.copyWith(remarks: event.value ?? '');
+          break;
+        default:
+          return; // 알 수 없는 필드는 처리하지 않음
+      }
+      
+      // isModified 플래그를 설정하여 변경 사항 있음을 표시
+      updatedSoftware = updatedSoftware.copyWith(isModified: true);
+      
+      _softwareData[rowIdx] = updatedSoftware;
+      _unsavedChanges = true;
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(milliseconds: 10), () { 
+        if (mounted) setState(() {}); 
+      });
     }
-    _softwareData[dataIdx] = updatedData;
-    _unsavedChanges = true;
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 10), () { if (mounted) setState(() {}); });
   }
 
   List<PlutoRow> _getPlutoRows() {
-    final List<PlutoRow> rows = [];
-    final pageData = _paginatedData();
-    for (var index = 0; index < pageData.length; index++) {
-      final data = pageData[index];
-      rows.add(PlutoRow(
-        cells: {
-          'selected': PlutoCell(value: _selectedSoftwareCodes.contains(data.code)),
-          'regDate': PlutoCell(value: data.regDate),
-          'code': PlutoCell(value: data.code ?? ''),
-          'assetCode': PlutoCell(value: data.assetCode),
-          'assetName': PlutoCell(value: data.assetName),
-          'specification': PlutoCell(value: data.specification),
-          'executionType': PlutoCell(value: data.executionType),
-          'quantity': PlutoCell(value: data.quantity),
-          'unitPrice': PlutoCell(value: data.unitPrice),
-          'totalPrice': PlutoCell(value: data.totalPrice),
-          'lotCode': PlutoCell(value: data.lotCode),
-          'detail': PlutoCell(value: data.detail),
-          'contractStartDate': PlutoCell(value: data.contractStartDate),
-          'contractEndDate': PlutoCell(value: data.contractEndDate),
-          'remarks': PlutoCell(value: data.remarks),
-        },
-      ));
+    List<PlutoRow> rows = [];
+    
+    for (var item in _paginatedData()) {
+      rows.add(PlutoRow(cells: {
+        'checkbox': PlutoCell(value: _selectedSoftwareCodes.contains(item.code)),
+        'regDate': PlutoCell(value: item.regDate),
+        'code': PlutoCell(value: item.code),
+        'assetType': PlutoCell(value: item.assetType),
+        'assetName': PlutoCell(value: item.assetName),
+        'specification': PlutoCell(value: item.specification),
+        'setupPrice': PlutoCell(value: item.setupPrice),
+        'annualMaintenancePrice': PlutoCell(value: item.annualMaintenancePrice),
+        'costType': PlutoCell(value: item.costType),
+        'vendor': PlutoCell(value: item.vendor),
+        'licenseKey': PlutoCell(value: item.licenseKey),
+        'user': PlutoCell(value: item.user),
+        'startDate': PlutoCell(value: item.startDate),
+        'endDate': PlutoCell(value: item.endDate),
+        'remarks': PlutoCell(value: item.remarks),
+      }));
     }
+    
     return rows;
   }
 
   List<PlutoColumn> get _columns {
     return [
-      PlutoColumn( title: '', field: 'selected', type: PlutoColumnType.text(), width: 40, enableEditingMode: false, textAlign: PlutoColumnTextAlign.center, renderer: (ctx) => _buildCheckboxRenderer(ctx)),
-      PlutoColumn( title: '등록일', field: 'regDate', type: PlutoColumnType.date(), width: 120, enableEditingMode: true ),
-      PlutoColumn( title: '코드', field: 'code', type: PlutoColumnType.text(), width: 120, enableEditingMode: false ),
-      PlutoColumn( title: '자산코드', field: 'assetCode', type: PlutoColumnType.text(), width: 100, enableEditingMode: true ),
-      PlutoColumn( title: '자산명', field: 'assetName', type: PlutoColumnType.select(_assetNames), width: 150, enableEditingMode: true ),
-      PlutoColumn( title: '규격', field: 'specification', type: PlutoColumnType.text(), width: 120, enableEditingMode: true ),
-      PlutoColumn( title: '실행유형', field: 'executionType', type: PlutoColumnType.select(_executionTypes), width: 100, enableEditingMode: true ),
-      PlutoColumn( title: '수량', field: 'quantity', type: PlutoColumnType.number(), width: 80, enableEditingMode: true ),
-      PlutoColumn( title: '단가', field: 'unitPrice', type: PlutoColumnType.number(format: '#,###.##'), width: 100, enableEditingMode: true ),
-      PlutoColumn( title: '금액', field: 'totalPrice', type: PlutoColumnType.number(format: '#,###.##'), width: 100, enableEditingMode: true ),
-      PlutoColumn( title: 'LOT코드', field: 'lotCode', type: PlutoColumnType.text(), width: 100, enableEditingMode: true ),
-      PlutoColumn( title: '세부내용', field: 'detail', type: PlutoColumnType.text(), width: 200, enableEditingMode: true ),
-      PlutoColumn( title: '계약시작일', field: 'contractStartDate', type: PlutoColumnType.date(), width: 120, enableEditingMode: true ),
-      PlutoColumn( title: '계약종료일', field: 'contractEndDate', type: PlutoColumnType.date(), width: 120, enableEditingMode: true ),
-      PlutoColumn( title: '비고', field: 'remarks', type: PlutoColumnType.text(), width: 150, enableEditingMode: true ),
+      PlutoColumn(
+        title: '',
+        field: 'checkbox',
+        type: PlutoColumnType.text(),
+        width: 60,
+        enableSorting: false,
+        enableFilterMenuItem: false,
+        enableEditingMode: false,
+        renderer: (rendererContext) {
+          return Checkbox(
+            value: rendererContext.cell.value ?? false,
+            onChanged: (bool? value) {
+              _gridStateManager?.changeCellValue(
+                rendererContext.cell,
+                value,
+              );
+              _toggleRowSelection(_gridStateManager!.rows.indexOf(rendererContext.row));
+            },
+          );
+        },
+      ),
+      PlutoColumn(
+        title: '등록일',
+        field: 'regDate',
+        type: PlutoColumnType.date(),
+        width: 110,
+        enableEditingMode: true,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+      ),
+      PlutoColumn(
+        title: '코드',
+        field: 'code',
+        type: PlutoColumnType.text(),
+        width: 130,
+        enableEditingMode: false,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+      ),
+      PlutoColumn(
+        title: '자산분류',
+        field: 'assetType',
+        type: PlutoColumnType.select(_assetTypes),
+        width: 120,
+        enableEditingMode: true,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+      ),
+      PlutoColumn(
+        title: '자산명',
+        field: 'assetName',
+        type: PlutoColumnType.text(),
+        width: 150,
+        enableEditingMode: true,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.left,
+      ),
+      PlutoColumn(
+        title: '규격',
+        field: 'specification',
+        type: PlutoColumnType.text(),
+        width: 150,
+      ),
+      PlutoColumn(
+        title: '구축금액',
+        field: 'setupPrice',
+        type: PlutoColumnType.number(format: '#,###'),
+        width: 120,
+      ),
+      PlutoColumn(
+        title: '연유지비',
+        field: 'annualMaintenancePrice',
+        type: PlutoColumnType.number(format: '#,###'),
+        width: 120,
+      ),
+      PlutoColumn(
+        title: '비용형태',
+        field: 'costType',
+        type: PlutoColumnType.select(_costTypes),
+        width: 90,
+      ),
+      PlutoColumn(
+        title: '거래업체',
+        field: 'vendor',
+        type: PlutoColumnType.text(),
+        width: 120,
+      ),
+      PlutoColumn(
+        title: '라이센스키',
+        field: 'licenseKey',
+        type: PlutoColumnType.text(),
+        width: 150,
+      ),
+      PlutoColumn(
+        title: '사용자',
+        field: 'user',
+        type: PlutoColumnType.text(),
+        width: 100,
+      ),
+      PlutoColumn(
+        title: '시작일',
+        field: 'startDate',
+        type: PlutoColumnType.date(format: 'yyyy-MM-dd'),
+        width: 120,
+        renderer: (rendererContext) {
+          dynamic cellValue = rendererContext.cell.value;
+          DateTime? date;
+          
+          // String이나 다른 타입을 DateTime으로 변환 처리
+          if (cellValue is DateTime) {
+            date = cellValue;
+          } else if (cellValue is String && cellValue.isNotEmpty) {
+            try {
+              date = DateTime.parse(cellValue);
+            } catch (e) {
+              // 파싱 실패 시 null로 처리
+              date = null;
+            }
+          }
+          
+          return Text(
+            date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
+            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
+          );
+        },
+      ),
+      PlutoColumn(
+        title: '종료일',
+        field: 'endDate',
+        type: PlutoColumnType.date(format: 'yyyy-MM-dd'),
+        width: 120,
+        renderer: (rendererContext) {
+          dynamic cellValue = rendererContext.cell.value;
+          DateTime? date;
+          
+          // String이나 다른 타입을 DateTime으로 변환 처리
+          if (cellValue is DateTime) {
+            date = cellValue;
+          } else if (cellValue is String && cellValue.isNotEmpty) {
+            try {
+              date = DateTime.parse(cellValue);
+            } catch (e) {
+              // 파싱 실패 시 null로 처리
+              date = null;
+            }
+          }
+          
+          return Text(
+            date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
+            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
+          );
+        },
+      ),
+      PlutoColumn(
+        title: '비고',
+        field: 'remarks',
+        type: PlutoColumnType.text(),
+        width: 150,
+      ),
     ];
   }
 
-  Widget _buildCheckboxRenderer(PlutoColumnRendererContext context) {
-    return Center(
-      child: Checkbox(
-        value: context.cell.value as bool? ?? false,
-        onChanged: (value) => _toggleRowSelection(context.rowIdx),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-    );
-  }
-
   void _addEmptyRow() {
-    int newNo = _softwareData.map((d) => d.no).fold(0, (max, c) => c > max ? c : max) + 1;
+    int newNo = _softwareData.isEmpty ? 1 : _softwareData.map((v) => v.no).fold(0, (max, current) => current > max ? current : max) + 1;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final newCode = 'SW-${today.year}${today.month.toString().padLeft(2, '0')}${today.day.toString().padLeft(2, '0')}-${newNo.toString().padLeft(3, '0')}';
-    
-    final softwareModel = SoftwareModel(
+    final newCode = SoftwareModel.generateSoftwareCode(today, newNo);
+
+    final newSoftware = SoftwareModel(
       no: newNo,
-      code: newCode,
       regDate: today,
+      code: newCode,
       assetCode: '',
-      assetName: _assetNames.first,
+      assetType: _assetTypes.first,
+      assetName: '',
       specification: '',
-      executionType: _executionTypes.first,
+      setupPrice: 0,
+      annualMaintenancePrice: 0,
+      costType: _costTypes.first,
+      vendor: '',
+      licenseKey: '',
+      user: '',
       quantity: 1,
-      unitPrice: 0.0,
-      totalPrice: 0.0,
+      unitPrice: 0,
+      totalPrice: 0,
       lotCode: '',
       detail: '',
+      startDate: today,
+      endDate: today.add(const Duration(days: 365)),
       remarks: '',
+      isSaved: false,
       isModified: true,
     );
-    
+
     setState(() {
-      _softwareData.insert(0, softwareModel);
+      _softwareData.insert(0, newSoftware);
       _currentPage = 0;
       _totalPages = (_softwareData.length / _rowsPerPage).ceil();
       _unsavedChanges = true;
     });
-    
-    _refreshPlutoGrid();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshPlutoGrid();
+    });
   }
 
   Future<void> _saveAllData() async {
-    if (_gridStateManager == null) return;
-    setState(() { _isLoading = true; });
-
-    List<SoftwareModel> toCreate = _softwareData.where((d) => !d.isSaved).toList();
-    List<SoftwareModel> toUpdate = _softwareData.where((d) => d.isSaved && d.isModified).toList();
-    int totalToSave = toCreate.length + toUpdate.length;
-    int successCount = 0;
-    int failCount = 0;
-
-    if (totalToSave == 0) {
-      setState(() { _isLoading = false; _unsavedChanges = false; });
+    final unsavedItems = _softwareData.where((v) => !v.isSaved || v.isModified).toList();
+    if (unsavedItems.isEmpty) {
       return;
     }
 
-    try {
-      // 신규 항목 생성
-      for (var item in toCreate) {
-        try {
-          final result = await _apiService.addSoftware(item);
-          if (result != null) {
-            successCount++;
-            final idx = _softwareData.indexWhere((d) => d.code == item.code);
-            if (idx != -1) {
-              _softwareData[idx] = result.copyWith(isSaved: true, isModified: false);
-            }
-          } else {
-            failCount++;
-          }
-        } catch (e) {
-          failCount++;
-          debugPrint('소프트웨어 추가 실패: $e');
-        }
-      }
+    setState(() => _isLoading = true);
 
-      // 기존 항목 업데이트
-      for (var item in toUpdate) {
-        try {
-          final result = await _apiService.updateSoftware(item);
-          if (result != null) {
-            successCount++;
-            final idx = _softwareData.indexWhere((d) => d.code == item.code);
-            if (idx != -1) {
-              _softwareData[idx] = result.copyWith(isModified: false);
-            }
-          } else {
-            failCount++;
-          }
-        } catch (e) {
-          failCount++;
-          debugPrint('소프트웨어 수정 실패: $e');
-        }
-      }
+    int successCount = 0;
+    int failCount = 0;
 
-      // 전체 데이터 다시 로드
-      if (mounted) {
-        _loadSoftwareData();
+    // API 요청 호출
+    for (final item in unsavedItems) {
+      try {
+        SoftwareModel? result;
+        if (item.isSaved) {
+          // 기존 데이터 업데이트
+          result = await _apiService.updateSoftware(item);
+        } else {
+          // 새 데이터 추가
+          result = await _apiService.addSoftware(item);
+        }
+
+        if (result != null) {
+          successCount++;
+          // 저장된 데이터로 업데이트
+          final index = _softwareData.indexWhere((v) => v.no == item.no);
+          if (index != -1) {
+            _softwareData[index] = result.copyWith(isSaved: true, isModified: false);
+          }
+        } else {
+          failCount++;
+        }
+      } catch (e) {
+        failCount++;
+        debugPrint('소프트웨어 데이터 저장 중 오류: $e');
       }
-    } catch (e) {
-      debugPrint('소프트웨어 데이터 저장 중 오류: $e');
-      if (mounted) {
-        setState(() { _isLoading = false; });
-      }
+    }
+
+    // UI 업데이트
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _unsavedChanges = false;
+        _totalPages = (_softwareData.length / _rowsPerPage).ceil();
+        if (_currentPage >= _totalPages && _totalPages > 0) {
+          _currentPage = _totalPages - 1;
+        }
+      });
+      _refreshPlutoGrid();
     }
   }
 
   void _deleteSelectedRows() {
     if (_selectedSoftwareCodes.isEmpty) return;
     final codesToDelete = List<String>.from(_selectedSoftwareCodes);
+
     showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (context) => AlertDialog(
         title: const Text('행 삭제'),
-        content: Text('선택한 ${codesToDelete.length}개 행을 삭제하시겠습니까?'),
+        content: Text('선택한 ${codesToDelete.length}개 항목을 삭제하시겠습니까?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('취소')
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('삭제')
-          )
-        ]
-      )
+          ),
+        ],
+      ),
     ).then((confirmed) {
       if (confirmed != true) return;
       setState(() { _isLoading = true; });
@@ -346,13 +517,14 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
     });
   }
 
-  void _deleteCodesSequentially(List<String> codes) async {
+  Future<void> _deleteCodesSequentially(List<String> codes) async {
     int successCount = 0;
     int failCount = 0;
-    
+
+    // API 호출
     for (final code in codes) {
       try {
-        final success = await _apiService.deleteSoftwareByCode(code);
+        bool success = await _apiService.deleteSoftwareByCode(code);
         if (success) {
           successCount++;
           _softwareData.removeWhere((d) => d.code == code);
@@ -361,10 +533,10 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
         }
       } catch (e) {
         failCount++;
-        debugPrint('소프트웨어 삭제 실패: $e');
+        debugPrint('소프트웨어 삭제 중 오류: $e');
       }
     }
-    
+
     if (mounted) {
       setState(() {
         _isLoading = false;
@@ -389,414 +561,821 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
       _gridStateManager!.removeAllRows();
       final rows = _getPlutoRows();
       _gridStateManager!.appendRows(rows);
-      if (rows.isNotEmpty) { _gridStateManager!.setCurrentCell(rows.first.cells.values.first, 0); }
-      _updateSelectedState();
+      if (rows.isNotEmpty) { 
+        _gridStateManager!.setCurrentCell(rows.first.cells.values.first, 0); 
+      }
     }
-  }
-
-  void _toggleRowSelection(int rowIdx) {
-    if (rowIdx < 0 || rowIdx >= _paginatedData().length) return;
-    final code = _paginatedData()[rowIdx].code;
-    if (code == null || code.isEmpty) return;
-    setState(() {
-      if (_selectedSoftwareCodes.contains(code)) _selectedSoftwareCodes.remove(code);
-      else _selectedSoftwareCodes.add(code);
-      _hasSelectedItems = _selectedSoftwareCodes.isNotEmpty;
-    });
-    _refreshPlutoGrid();
   }
 
   void _updateSelectedState() { 
     setState(() { _hasSelectedItems = _selectedSoftwareCodes.isNotEmpty; }); 
   }
 
+  void _toggleRowSelection(int rowIdx) {
+    if (rowIdx < 0 || rowIdx >= _paginatedData().length) return;
+    final data = _paginatedData()[rowIdx];
+    final code = data.code;
+    if (code == null) return;
+    
+    setState(() {
+      if (_selectedSoftwareCodes.contains(code)) {
+        _selectedSoftwareCodes.remove(code);
+      } else {
+        _selectedSoftwareCodes.add(code);
+      }
+      _hasSelectedItems = _selectedSoftwareCodes.isNotEmpty;
+    });
+    
+    if (_gridStateManager != null) {
+      _gridStateManager!.changeCellValue(
+        _gridStateManager!.rows[rowIdx].cells['checkbox']!,
+        _selectedSoftwareCodes.contains(code),
+        force: true
+      );
+    }
+  }
+
   // 엑셀 내보내기
   Future<void> _exportToExcel() async {
-    if (_softwareData.isEmpty) {
-      return;
-    }
-
-    setState(() { _isLoading = true; });
-
     try {
-      // 엑셀 생성
+      setState(() => _isLoading = true);
+      
+      // Excel 생성
       final excel = Excel.createExcel();
       final sheet = excel['소프트웨어 자산'];
-
-      // 헤더 설정
-      final headers = [
-        'No', '등록일', '자산코드', '자산명', '사양', '실행유형',
-        '수량', '단가', '금액', 'LOT 번호', '세부내용',
-        '계약시작일', '계약종료일', '비고'
+      
+      // 헤더 생성
+      List<String> headers = [
+        'No', '등록일', '코드', '자산분류', '자산코드', '자산명', '규격', 
+        '구축금액', '연유지비', '비용형태', '거래업체', '라이센스키', 
+        '사용자', '시작일', '종료일', '비고'
       ];
-
-      // 헤더 스타일
+      
+      // 헤더 스타일 설정
       final headerStyle = CellStyle(
         bold: true,
         horizontalAlign: HorizontalAlign.Center,
       );
-
+      
       // 헤더 추가
       for (var i = 0; i < headers.length; i++) {
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
-          ..value = TextCellValue(headers[i])
-          ..cellStyle = headerStyle;
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
+        cell.value = TextCellValue(headers[i]);
+        cell.cellStyle = headerStyle;
       }
-
-      // 날짜 포맷
-      final dateFormat = DateFormat('yyyy-MM-dd');
-
+      
       // 데이터 추가
       for (var i = 0; i < _softwareData.length; i++) {
         final data = _softwareData[i];
-        final rowIndex = i + 1;
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex))
-          .value = TextCellValue(data.no.toString());
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: rowIndex))
-          .value = TextCellValue(dateFormat.format(data.regDate));
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: rowIndex))
-          .value = TextCellValue(data.assetCode);
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: rowIndex))
-          .value = TextCellValue(data.assetName);
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: rowIndex))
-          .value = TextCellValue(data.specification);
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: rowIndex))
-          .value = TextCellValue(data.executionType);
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rowIndex))
-          .value = TextCellValue(data.quantity.toString());
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: rowIndex))
-          .value = TextCellValue(data.unitPrice.toStringAsFixed(0));
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rowIndex))
-          .value = TextCellValue(data.totalPrice.toStringAsFixed(0));
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: rowIndex))
-          .value = TextCellValue(data.lotCode ?? '');
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: rowIndex))
-          .value = TextCellValue(data.detail);
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: rowIndex))
-          .value = TextCellValue(data.contractStartDate != null ? 
-            dateFormat.format(data.contractStartDate!) : '');
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 12, rowIndex: rowIndex))
-          .value = TextCellValue(data.contractEndDate != null ? 
-            dateFormat.format(data.contractEndDate!) : '');
-
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 13, rowIndex: rowIndex))
-          .value = TextCellValue(data.remarks);
+        List<dynamic> rowData = [
+          data.no,
+          DateFormat('yyyy-MM-dd').format(data.regDate),
+          data.code,
+          data.assetType,
+          data.assetCode,
+          data.assetName,
+          data.specification,
+          data.setupPrice,
+          data.annualMaintenancePrice,
+          data.costType,
+          data.vendor,
+          data.licenseKey,
+          data.user,
+          data.startDate != null ? DateFormat('yyyy-MM-dd').format(data.startDate!) : '',
+          data.endDate != null ? DateFormat('yyyy-MM-dd').format(data.endDate!) : '',
+          data.remarks,
+        ];
+        
+        for (var j = 0; j < rowData.length; j++) {
+          final cell = sheet.cell(CellIndex.indexByColumnRow(
+            columnIndex: j,
+            rowIndex: i + 1,
+          ));
+          
+          if (rowData[j] is num) {
+            cell.value = IntCellValue(rowData[j] is int ? rowData[j] : rowData[j].toInt());
+          } else {
+            cell.value = TextCellValue(rowData[j].toString());
+          }
+        }
       }
 
-      // 열 너비 조정
+      // 자동 열 너비
       for (var i = 0; i < headers.length; i++) {
         sheet.setColumnWidth(i, 15.0);
       }
-      sheet.setColumnWidth(10, 30.0); // 세부내용 열은 더 넓게
-
-      // 파일 저장
-      final excelBytes = excel.encode();
-      if (excelBytes != null) {
-        final dateTimeStr = DateTime.now().toString().split('.').first.replaceAll(RegExp(r'[^\d]'), '');
-        final fileName = '소프트웨어자산_${dateTimeStr}';
-
+      
+      // 엑셀 파일 생성 및 다운로드
+      final bytes = excel.encode();
+      if (bytes != null) {
+        final now = DateTime.now();
+        final fileName = '소프트웨어_자산_${DateFormat('yyyyMMdd_HHmmss').format(now)}.xlsx';
+        
         if (kIsWeb) {
           await FileSaver.instance.saveFile(
             name: fileName,
-            bytes: Uint8List.fromList(excelBytes),
+            bytes: Uint8List.fromList(bytes),
             ext: 'xlsx',
             mimeType: MimeType.microsoftExcel,
           );
         } else {
-          final result = await FilePicker.platform.getDirectoryPath();
+          String? result = await FilePicker.platform.saveFile(
+            dialogTitle: '엑셀 파일 저장',
+            fileName: fileName,
+            type: FileType.custom,
+            allowedExtensions: ['xlsx'],
+          );
+          
           if (result != null) {
-            final filePath = '$result/$fileName.xlsx';
-            final file = File(filePath);
-            await file.writeAsBytes(excelBytes);
+            File(result)
+              ..createSync(recursive: true)
+              ..writeAsBytesSync(bytes);
           }
         }
       }
       
-      setState(() { _isLoading = false; });
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     } catch (e) {
-      debugPrint('엑셀 내보내기 오류: $e');
-      setState(() { _isLoading = false; });
+      debugPrint('엑셀 내보내기 중 오류: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-  }
-
-  // 엑셀 가져오기 비밀번호 확인
-  Future<bool> _showAdminPasswordDialog() async {
-    final passwordController = TextEditingController();
-    final validPassword = '1234'; // 실제로는 더 안전한 방식으로 관리해야 함
-    
-    return showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('관리자 확인'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('데이터 가져오기를 위해 관리자 비밀번호를 입력하세요.'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: '비밀번호',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final isValid = passwordController.text == validPassword;
-                Navigator.pop(context, isValid);
-              },
-              child: const Text('확인'),
-            ),
-          ],
-        );
-      },
-    ).then((value) => value ?? false);
   }
 
   // 엑셀 가져오기
   Future<void> _importFromExcel() async {
-    // 관리자 비밀번호 확인
-    final isAuthorized = await _showAdminPasswordDialog();
-    if (!isAuthorized) return;
-    
     try {
-      // 파일 선택
-      final result = await FilePicker.platform.pickFiles(
+      setState(() => _isLoading = true);
+      
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['xlsx', 'xls'],
       );
-
-      if (result == null || result.files.isEmpty) return;
-
-      setState(() { _isLoading = true; });
-
-      final file = result.files.first;
-      late List<int> bytes;
-
-      if (kIsWeb) {
-        bytes = file.bytes!;
-      } else {
-        final path = file.path!;
-        final fileBytes = File(path).readAsBytesSync();
-        bytes = fileBytes;
-      }
-
-      // 엑셀 파일 파싱
-      final excel = Excel.decodeBytes(bytes);
-      final sheet = excel.tables.keys.first;
-      final rows = excel.tables[sheet]?.rows;
-
-      if (rows == null || rows.isEmpty || rows.length <= 1) {
-        throw Exception('유효한 데이터가 없습니다.');
-      }
-
-      // 헤더 검증
-      final requiredHeaders = [
-        'No', '등록일', '자산코드', '자산명', '사양', '실행유형',
-        '수량', '단가', '금액', 'LOT 번호', '세부내용',
-        '계약시작일', '계약종료일', '비고'
-      ];
-
-      final headerRow = rows[0];
-      for (var i = 0; i < requiredHeaders.length; i++) {
-        if (i >= headerRow.length || 
-            headerRow[i]?.value.toString().trim() != requiredHeaders[i]) {
-          throw Exception('열 헤더가 예상과 다릅니다. 템플릿을 확인하세요.');
+      
+      if (result != null) {
+        Uint8List bytes;
+        
+        if (kIsWeb) {
+          bytes = result.files.single.bytes!;
+        } else {
+          File file = File(result.files.single.path!);
+          bytes = file.readAsBytesSync();
         }
-      }
-
-      // 데이터 파싱
-      final newItems = <SoftwareModel>[];
-      final dateFormat = DateFormat('yyyy-MM-dd');
-
-      for (var i = 1; i < rows.length; i++) {
-        final row = rows[i];
-        if (row.isEmpty || row.length < requiredHeaders.length) continue;
-
-        try {
-          final noCell = row[0]?.value?.toString() ?? '';
-          if (noCell.isEmpty) continue;
-
-          final no = int.tryParse(noCell) ?? 0;
-          if (no <= 0) continue;
-
-          final regDateStr = row[1]?.value?.toString() ?? '';
-          final regDate = regDateStr.isNotEmpty 
-              ? dateFormat.parse(regDateStr) 
-              : DateTime.now();
-
-          final assetCode = row[2]?.value?.toString() ?? '';
-          final code = assetCode.isNotEmpty 
-              ? assetCode 
-              : 'SW-${DateFormat('yyyyMMdd').format(regDate)}-${no.toString().padLeft(3, '0')}';
-
-          final assetName = row[3]?.value?.toString() ?? '';
-          final specification = row[4]?.value?.toString() ?? '';
-          final executionType = row[5]?.value?.toString() ?? '';
+        
+        // 엑셀 디코딩
+        final excel = Excel.decodeBytes(bytes);
+        if (excel.tables.isNotEmpty) {
+          final sheet = excel.tables.keys.first;
           
-          final quantityStr = row[6]?.value?.toString() ?? '1';
-          final quantity = int.tryParse(quantityStr) ?? 1;
-          
-          final unitPriceStr = row[7]?.value?.toString() ?? '0';
-          final unitPrice = double.tryParse(unitPriceStr) ?? 0;
-          
-          final totalPriceStr = row[8]?.value?.toString() ?? '';
-          final totalPrice = totalPriceStr.isNotEmpty 
-              ? (double.tryParse(totalPriceStr) ?? unitPrice * quantity) 
-              : unitPrice * quantity;
-          
-          final lotCode = row[9]?.value?.toString() ?? '';
-          final detail = row[10]?.value?.toString() ?? '';
-          
-          final contractStartDateStr = row[11]?.value?.toString() ?? '';
-          final contractStartDate = contractStartDateStr.isNotEmpty 
-              ? dateFormat.parse(contractStartDateStr) 
-              : regDate;
-          
-          final contractEndDateStr = row[12]?.value?.toString() ?? '';
-          DateTime? contractEndDate;
-          if (contractEndDateStr.isNotEmpty) {
-            try {
-              contractEndDate = dateFormat.parse(contractEndDateStr);
-            } catch (_) {}
+          // 헤더 확인
+          final headers = <String>[];
+          for (var cell in excel.tables[sheet]!.rows[0]) {
+            headers.add(cell?.value.toString() ?? '');
           }
           
-          final remarks = row[13]?.value?.toString() ?? '';
-
-          newItems.add(SoftwareModel(
-            no: no,
-            regDate: regDate,
-            code: code,
-            assetCode: assetCode,
-            assetName: assetName,
-            specification: specification,
-            executionType: executionType,
-            quantity: quantity,
-            unitPrice: unitPrice,
-            totalPrice: totalPrice,
-            lotCode: lotCode,
-            detail: detail,
-            contractStartDate: contractStartDate,
-            contractEndDate: contractEndDate,
-            remarks: remarks,
-            isSaved: false,
-            isModified: true,
-          ));
-        } catch (e) {
-          debugPrint('행 $i 파싱 오류: $e');
+          // 필수 필드 확인
+          final requiredHeaders = ['자산분류', '자산코드', '자산명'];
+          bool hasRequired = requiredHeaders.every((h) => headers.contains(h));
+          
+          if (!hasRequired) {
+            // 필수 필드 없음 - 처리 중단
+            if (mounted) {
+              setState(() => _isLoading = false);
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('필수 필드 누락'),
+                  content: const Text('엑셀 파일에 필수 필드(자산분류, 자산코드, 자산명)가 포함되어 있지 않습니다.'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('확인'),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return;
+          }
+          
+          // 데이터 파싱
+          List<SoftwareModel> importedData = [];
+          int startNo = _softwareData.isEmpty ? 1 : _softwareData.map((v) => v.no).fold(0, (max, current) => current > max ? current : max) + 1;
+          
+          for (var i = 1; i < excel.tables[sheet]!.rows.length; i++) {
+            final row = excel.tables[sheet]!.rows[i];
+            
+            // 기본값 설정
+            int no = startNo + i - 1;
+            DateTime regDate = DateTime.now();
+            String assetType = '';
+            String assetCode = '';
+            String assetName = '';
+            String specification = '';
+            double setupPrice = 0;
+            double annualMaintenancePrice = 0;
+            String costType = _costTypes.first;
+            String vendor = '';
+            String licenseKey = '';
+            String user = '';
+            DateTime? startDate;
+            DateTime? endDate;
+            String remarks = '';
+            
+            // 데이터 매핑
+            for (var j = 0; j < headers.length && j < row.length; j++) {
+              if (row[j] == null || row[j]?.value == null) continue;
+              
+              final header = headers[j];
+              dynamic rawValue = row[j]!.value;
+              final value = rawValue.toString();
+              
+              switch (header) {
+                case '등록일':
+                  try {
+                    if (rawValue is DateTime) {
+                      regDate = rawValue;
+                    } else {
+                      regDate = DateFormat('yyyy-MM-dd').parse(value);
+                    }
+                  } catch (e) {
+                    debugPrint('등록일 파싱 오류: $e');
+                  }
+                  break;
+                case '자산분류':
+                  assetType = value;
+                  break;
+                case '자산코드':
+                  assetCode = value;
+                  break;
+                case '자산명':
+                  assetName = value;
+                  break;
+                case '규격':
+                  specification = value;
+                  break;
+                case '구축금액':
+                  try {
+                    setupPrice = double.parse(value.replaceAll(',', ''));
+                  } catch (e) {
+                    debugPrint('구축금액 파싱 오류: $e');
+                  }
+                  break;
+                case '연유지비':
+                  try {
+                    annualMaintenancePrice = double.parse(value.replaceAll(',', ''));
+                  } catch (e) {
+                    debugPrint('연유지비 파싱 오류: $e');
+                  }
+                  break;
+                case '비용형태':
+                  costType = value;
+                  break;
+                case '거래업체':
+                  vendor = value;
+                  break;
+                case '라이센스키':
+                  licenseKey = value;
+                  break;
+                case '사용자':
+                  user = value;
+                  break;
+                case '시작일':
+                  try {
+                    if (rawValue is DateTime) {
+                      startDate = rawValue;
+                    } else if (value.isNotEmpty) {
+                      startDate = DateFormat('yyyy-MM-dd').parse(value);
+                    }
+                  } catch (e) {
+                    debugPrint('시작일 파싱 오류: $e');
+                  }
+                  break;
+                case '종료일':
+                  try {
+                    if (rawValue is DateTime) {
+                      endDate = rawValue;
+                    } else if (value.isNotEmpty) {
+                      endDate = DateFormat('yyyy-MM-dd').parse(value);
+                    }
+                  } catch (e) {
+                    debugPrint('종료일 파싱 오류: $e');
+                  }
+                  break;
+                case '비고':
+                  remarks = value;
+                  break;
+              }
+            }
+            
+            // 필수 필드 확인
+            if (assetType.isNotEmpty && assetCode.isNotEmpty && assetName.isNotEmpty) {
+              // 코드 생성 (자동)
+              final code = SoftwareModel.generateSoftwareCode(regDate, no);
+              
+              importedData.add(SoftwareModel(
+                no: no,
+                code: code,
+                regDate: regDate,
+                assetCode: assetCode,
+                assetType: assetType,
+                assetName: assetName,
+                specification: specification,
+                setupPrice: setupPrice,
+                annualMaintenancePrice: annualMaintenancePrice,
+                costType: costType,
+                vendor: vendor,
+                licenseKey: licenseKey,
+                user: user,
+                quantity: 1,
+                unitPrice: 0,
+                totalPrice: 0,
+                lotCode: '',
+                detail: '',
+                startDate: startDate,
+                endDate: endDate,
+                remarks: remarks,
+                isSaved: false,
+                isModified: true,
+              ));
+            }
+          }
+          
+          // 데이터 저장
+          if (importedData.isNotEmpty) {
+            setState(() {
+              _softwareData.insertAll(0, importedData);
+              _currentPage = 0;
+              _totalPages = (_softwareData.length / _rowsPerPage).ceil();
+              _unsavedChanges = true;
+            });
+            _refreshPlutoGrid();
+            
+            // 다이얼로그 표시
+            if (mounted) {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('엑셀 가져오기 완료'),
+                  content: Text('${importedData.length}개 항목이 가져와졌습니다.\n변경 사항을 저장하려면 "데이터 저장" 버튼을 클릭하세요.'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _saveAllData();
+                      },
+                      child: const Text('저장하기'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('닫기'),
+                    ),
+                  ],
+                ),
+              );
+            }
+          } else {
+            // 유효한 데이터 없음
+            if (mounted) {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('가져오기 실패'),
+                  content: const Text('유효한 데이터가 없습니다. 파일 형식을 확인하세요.'),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('확인'),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
         }
       }
-
-      if (newItems.isNotEmpty) {
-        setState(() {
-          _softwareData.addAll(newItems);
-          _softwareData.sort((a, b) => b.no.compareTo(a.no));
-          _totalPages = (_softwareData.length / _rowsPerPage).ceil();
-          _currentPage = 0;
-          _unsavedChanges = true;
-        });
-        _refreshPlutoGrid();
-      }
       
-      setState(() { _isLoading = false; });
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     } catch (e) {
-      debugPrint('엑셀 가져오기 오류: $e');
-      setState(() { _isLoading = false; });
+      debugPrint('엑셀 가져오기 중 오류: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  // 데이터 탭 UI 빌드 (컴포넌트 사용)
+  // 필터 디자인을 솔루션 개발 페이지와 완전히 동일하게 수정
+  Widget _buildFilterBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          // 자산분류 필터
+          Expanded(
+            flex: 2,
+            child: DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: '자산분류',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              ),
+              value: _selectedAssetType,
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('전체'),
+                ),
+                ..._assetTypes.map((type) => DropdownMenuItem<String>(
+                  value: type,
+                  child: Text(type),
+                )),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedAssetType = value;
+                  _currentPage = 0;
+                });
+                _loadSoftwareData();
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // 비용형태 필터
+          Expanded(
+            flex: 2,
+            child: DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: '비용형태',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              ),
+              value: _selectedCostType,
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('전체'),
+                ),
+                ..._costTypes.map((type) => DropdownMenuItem<String>(
+                  value: type,
+                  child: Text(type),
+                )),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _selectedCostType = value;
+                  _currentPage = 0;
+                });
+                _loadSoftwareData();
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // 통합검색
+          Expanded(
+            flex: 3,
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: '통합검색',
+                hintText: '검색어 입력',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              ),
+              onChanged: (value) {
+                _debounceTimer?.cancel();
+                _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+                  setState(() { _currentPage = 0; });
+                  _loadSoftwareData();
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 데이터가 없을 때 표시할 뷰
+  Widget _buildEmptyDataView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.inbox_outlined,
+            size: 80,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '데이터가 없습니다',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _addEmptyRow,
+            icon: const Icon(Icons.add),
+            label: const Text('첫 데이터 추가하기'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              textStyle: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 타이틀과 버튼 등 행동 UI 빌드
+  Widget _buildTitleAndActions() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // 타이틀 및 데이터 정보
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '소프트웨어 자산',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '전체 ${_softwareData.length}개 항목, ${_currentPage + 1}/${_totalPages} 페이지',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+
+          // 실행 버튼들 그룹
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: _addEmptyRow,
+                icon: const Icon(Icons.add, color: Colors.black),
+                label: const Text('행 추가', style: TextStyle(color: Colors.black)),
+                style: ElevatedButton.styleFrom(
+                  foregroundColor: Colors.black,
+                  disabledForegroundColor: Colors.black
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _saveAllData,
+                icon: Icon(Icons.save, color: _unsavedChanges ? Colors.yellow : Colors.white),
+                label: Text(
+                  '데이터 저장${_unsavedChanges ? ' *' : ''}',
+                  style: TextStyle(
+                    fontWeight: _unsavedChanges ? FontWeight.bold : FontWeight.normal,
+                    color: Colors.white
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _unsavedChanges ? Colors.blue.shade700 : null,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _hasSelectedItems ? _deleteSelectedRows : null,
+                icon: const Icon(Icons.delete_outline),
+                label: Text('행 삭제${_hasSelectedItems ? ' (${_selectedSoftwareCodes.length})' : ''}'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.red.withOpacity(0.3),
+                  disabledForegroundColor: Colors.black
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _exportToExcel,
+                icon: const Icon(Icons.file_download, color: Colors.white),
+                label: const Text('엑셀 다운로드', style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _importFromExcel,
+                icon: const Icon(Icons.file_upload, color: Colors.white),
+                label: const Text('엑셀 업로드', style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 범례 추가 (솔루션 개발 페이지와 동일한 스타일)
+  Widget _buildLegend() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300)
+      ),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 8,
+        alignment: WrapAlignment.start,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text('범례:', style: TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(4)
+                )
+              ),
+              const SizedBox(width: 4),
+              const Text('신규')
+            ]
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(4)
+                )
+              ),
+              const SizedBox(width: 4),
+              const Text('수정')
+            ]
+          ),
+          if (_unsavedChanges)
+            const Text(
+              '* 저장되지 않은 변경사항',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)
+            ),
+        ],
+      ),
+    );
+  }
+
+  // 페이지 네비게이션
+  Widget _buildPageNavigator() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300)
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.first_page),
+            onPressed: _currentPage > 0 ? () => _changePage(0) : null,
+            color: Colors.blue,
+            disabledColor: Colors.grey.shade400,
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30)
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: _currentPage > 0 ? () => _changePage(_currentPage - 1) : null,
+            color: Colors.blue,
+            disabledColor: Colors.grey.shade400,
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30)
+          ),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '${_currentPage + 1} / $_totalPages',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)
+            )
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: _currentPage < _totalPages - 1 ? () => _changePage(_currentPage + 1) : null,
+            color: Colors.blue,
+            disabledColor: Colors.grey.shade400,
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30)
+          ),
+          IconButton(
+            icon: const Icon(Icons.last_page),
+            onPressed: _currentPage < _totalPages - 1 ? () => _changePage(_totalPages - 1) : null,
+            color: Colors.blue,
+            disabledColor: Colors.grey.shade400,
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30)
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 데이터 탭 UI 빌드
   Widget _buildDataTab() {
     return Column(
       children: [
-        // 필터 위젯
-        SoftwareFilterWidget(
-          searchController: _searchController,
-          selectedAssetName: _selectedAssetName,
-          selectedExecutionType: _selectedExecutionType,
-          assetNames: _assetNames,
-          executionTypes: _executionTypes,
-          onAssetNameChanged: (value) { setState(() { _selectedAssetName = value; _currentPage = 0; _loadSoftwareData(); }); },
-          onExecutionTypeChanged: (value) { setState(() { _selectedExecutionType = value; _currentPage = 0; _loadSoftwareData(); }); },
-          onSearchChanged: () { setState(() { _currentPage = 0; _loadSoftwareData(); }); },
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('소프트웨어 관리', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                  if (_softwareData.isNotEmpty) Text('전체 ${_softwareData.length}개 항목, ${_currentPage + 1}/${_totalPages} 페이지', style: TextStyle(color: Colors.grey[600])),
-                ]
-              ),
-              ActionButtonsWidget(
-                onAddRow: _addEmptyRow,
-                onSaveData: _saveAllData,
-                onDeleteRows: _deleteSelectedRows,
-                onExportExcel: _exportToExcel,
-                onImportExcel: _importFromExcel,
-                hasSelectedItems: _hasSelectedItems,
-                selectedItemCount: _selectedSoftwareCodes.length,
-                unsavedChanges: _unsavedChanges,
-              ),
-            ]
-          ),
-        ),
+        // 1. 필터 (맨 위에 배치)
+        _buildFilterBar(),
+        
+        // 2. 타이틀과 실행 버튼 (한 줄에 표시)
+        _buildTitleAndActions(),
+        
+        // 3. 범례 (데이터 테이블 바로 위에 배치)
+        if (_softwareData.isNotEmpty) _buildLegend(),
+        
+        // 4. 데이터 테이블 (Expanded로 남은 공간 채움)
         Expanded(
-          child: _isLoading ? const Center(child: CircularProgressIndicator()) : _softwareData.isEmpty
-            ? Center(child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.info_outline, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text('데이터가 없습니다', style: TextStyle(fontSize: 18, color: Colors.grey[600])),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: _addEmptyRow,
-                    icon: const Icon(Icons.add),
-                    label: const Text('첫 데이터 추가하기')
-                  )
-                ]
-              ))
-            : Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: DataTableWidget(
-                  columns: _columns,
-                  rows: _getPlutoRows(),
-                  unsavedChanges: _unsavedChanges,
-                  onCellChanged: _handleCellChanged,
-                  onLoaded: (event) { _gridStateManager = event.stateManager; _gridStateManager!.setShowColumnFilter(false); },
-                  currentPage: _currentPage,
-                  totalPages: _totalPages,
-                  onPageChanged: _changePage,
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _softwareData.isEmpty
+              ? _buildEmptyDataView()
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: PlutoGrid(
+                    columns: _columns,
+                    rows: _getPlutoRows(),
+                    onLoaded: (PlutoGridOnLoadedEvent event) {
+                      _gridStateManager = event.stateManager;
+                      _gridStateManager!.setShowColumnFilter(false);
+                    },
+                    onChanged: _handleCellChanged,
+                    configuration: PlutoGridConfiguration(
+                      style: PlutoGridStyleConfig(
+                        cellTextStyle: const TextStyle(fontSize: 12),
+                        columnTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        rowColor: Colors.white,
+                        oddRowColor: Colors.grey.shade50,
+                        activatedColor: Colors.blue.shade100,
+                        gridBorderColor: Colors.grey.shade300,
+                        borderColor: Colors.grey.shade300,
+                        inactivatedBorderColor: Colors.grey.shade300
+                      ),
+                      // 좌우 스크롤 활성화
+                      scrollbar: const PlutoGridScrollbarConfig(
+                        isAlwaysShown: true,
+                        scrollbarThickness: 8,
+                        scrollbarRadius: Radius.circular(4),
+                      ),
+                      columnSize: const PlutoGridColumnSizeConfig(
+                        autoSizeMode: PlutoAutoSizeMode.none, // 좌우 스크롤 가능하도록 설정
+                      ),
+                    ),
+                    mode: PlutoGridMode.normal,
+                  ),
                 ),
-              ),
         ),
+        
+        // 5. 페이지 네비게이션 (맨 아래에 배치)
+        if (_softwareData.isNotEmpty) _buildPageNavigator(),
       ],
     );
   }
@@ -820,16 +1399,98 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
           indicatorColor: Theme.of(context).primaryColor,
           dividerColor: Colors.transparent,
         ),
-        elevation: 1,
+        elevation: 0,
+        backgroundColor: const Color(0xFFF0F0F5),
       ),
       body: TabBarView(
         controller: _tabController,
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
+          // 데이터 관리 탭
           _buildDataTab(),
-          const SoftwareDashboardPage(),
+          // 종합 현황 탭 (소프트웨어 대시보드와 연결)
+          SoftwareDashboardPage(softwareData: _softwareData),
         ],
       ),
     );
+  }
+
+  // 데이터 저장 함수
+  Future<void> _saveData() async {
+    try {
+      setState(() => _isLoading = true);
+      
+      final List<SoftwareModel> modifiedItems = _softwareData.where((item) => item.isModified).toList();
+      
+      if (modifiedItems.isEmpty) {
+        debugPrint('변경된 항목이 없음');
+        setState(() => _isLoading = false);
+        return;
+      }
+      
+      int successCount = 0;
+      List<String> failedCodes = [];
+      
+      // 각 항목 저장
+      for (final item in modifiedItems) {
+        try {
+          if (item.code == null || item.code!.isEmpty) {
+            // 새 항목 추가
+            final result = await _apiService.addSoftware(item);
+            if (result != null) {
+              successCount++;
+              
+              // 목록에서 해당 항목 업데이트
+              final index = _softwareData.indexWhere((i) => i == item);
+              if (index >= 0) {
+                _softwareData[index] = result;
+              }
+            } else {
+              failedCodes.add('신규 항목');
+            }
+          } else {
+            // 기존 항목 수정
+            final result = await _apiService.updateSoftware(item);
+            if (result != null) {
+              successCount++;
+              
+              // 목록에서 해당 항목 업데이트
+              final index = _softwareData.indexWhere((i) => i.code == item.code);
+              if (index >= 0) {
+                _softwareData[index] = result;
+              }
+            } else {
+              failedCodes.add(item.code!);
+            }
+          }
+        } catch (e) {
+          debugPrint('항목 저장 실패 ${item.code}: $e');
+          failedCodes.add(item.code ?? '신규 항목');
+        }
+      }
+      
+      // 결과 표시
+      setState(() {
+        _isLoading = false;
+        _unsavedChanges = failedCodes.isNotEmpty;
+      });
+      
+      // 변경 상태 메시지
+      if (successCount > 0) {
+        debugPrint('$successCount개 항목 저장 성공');
+      }
+      
+      if (failedCodes.isNotEmpty) {
+        debugPrint('${failedCodes.length}개 항목 저장 실패: ${failedCodes.join(', ')}');
+      }
+      
+      // 그리드 새로고침
+      _refreshPlutoGrid();
+      
+    } catch (e) {
+      debugPrint('데이터 저장 중 오류: $e');
+      setState(() => _isLoading = false);
+    }
   }
 }
 
@@ -838,23 +1499,23 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
 // 소프트웨어 필터 위젯
 class SoftwareFilterWidget extends StatefulWidget {
   final TextEditingController searchController;
-  final String? selectedAssetName;
-  final String? selectedExecutionType;
-  final List<String> assetNames;
-  final List<String> executionTypes;
-  final ValueChanged<String?> onAssetNameChanged;
-  final ValueChanged<String?> onExecutionTypeChanged;
+  final String? selectedAssetType;
+  final String? selectedCostType;
+  final List<String> assetTypes;
+  final List<String> costTypes;
+  final ValueChanged<String?> onAssetTypeChanged;
+  final ValueChanged<String?> onCostTypeChanged;
   final VoidCallback onSearchChanged;
 
   const SoftwareFilterWidget({
     super.key,
     required this.searchController,
-    required this.selectedAssetName,
-    required this.selectedExecutionType,
-    required this.assetNames,
-    required this.executionTypes,
-    required this.onAssetNameChanged,
-    required this.onExecutionTypeChanged,
+    required this.selectedAssetType,
+    required this.selectedCostType,
+    required this.assetTypes,
+    required this.costTypes,
+    required this.onAssetTypeChanged,
+    required this.onCostTypeChanged,
     required this.onSearchChanged,
   });
 
@@ -885,10 +1546,10 @@ class _SoftwareFilterWidgetState extends State<SoftwareFilterWidget> {
           Expanded(
             child: DropdownButton<String>(
               hint: const Text('전체 자산'),
-              value: widget.selectedAssetName,
+              value: widget.selectedAssetType,
               isExpanded: true,
-              onChanged: widget.onAssetNameChanged,
-              items: [null, ...widget.assetNames].map((s) => DropdownMenuItem<String>(
+              onChanged: widget.onAssetTypeChanged,
+              items: [null, ...widget.assetTypes].map((s) => DropdownMenuItem<String>(
                 value: s,
                 child: Text(s ?? '전체 자산')
               )).toList()
@@ -898,10 +1559,10 @@ class _SoftwareFilterWidgetState extends State<SoftwareFilterWidget> {
           Expanded(
             child: DropdownButton<String>(
               hint: const Text('전체 실행유형'),
-              value: widget.selectedExecutionType,
+              value: widget.selectedCostType,
               isExpanded: true,
-              onChanged: widget.onExecutionTypeChanged,
-              items: [null, ...widget.executionTypes].map((t) => DropdownMenuItem<String>(
+              onChanged: widget.onCostTypeChanged,
+              items: [null, ...widget.costTypes].map((t) => DropdownMenuItem<String>(
                 value: t,
                 child: Text(t ?? '전체 실행유형')
               )).toList()
@@ -1065,4 +1726,35 @@ class DataTableWidget extends StatelessWidget {
       ],
     );
   }
+}
+
+// 페이지 네비게이션 위젯
+Widget _buildPagination() {
+  return DataTableWidget(
+    columns: [
+      PlutoColumn(
+        title: '페이지',
+        field: 'page',
+        type: PlutoColumnType.text(),
+        width: 100,
+      ),
+    ],
+    rows: [
+      PlutoRow(cells: {
+        'page': PlutoCell(value: '1'),
+      }),
+      PlutoRow(cells: {
+        'page': PlutoCell(value: '2'),
+      }),
+      PlutoRow(cells: {
+        'page': PlutoCell(value: '3'),
+      }),
+    ],
+    unsavedChanges: false,
+    onCellChanged: (event) {},
+    onLoaded: (event) {},
+    currentPage: 0,
+    totalPages: 3,
+    onPageChanged: (page) {},
+  );
 } 

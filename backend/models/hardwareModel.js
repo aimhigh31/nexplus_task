@@ -110,6 +110,6 @@ hardwareSchema.virtual('totalPrice').get(function() {
   return (this.unitPrice || 0) * (this.quantity || 1);
 });
 
-const Hardware = mongoose.model('Hardware', hardwareSchema, 'hardware_assets');
+const Hardware = mongoose.model('Hardware', hardwareSchema, 'hardware');
 
 module.exports = Hardware; 
