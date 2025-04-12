@@ -98,7 +98,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   
   // 페이지네이션 상태
   int _currentPage = 1;
-  int _rowsPerPage = 20;
+  int _rowsPerPage = 13;
   int _totalPages = 1;
   
   // 데이터 테이블 관련
@@ -159,7 +159,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
         title: '',
         field: 'selected',
         type: PlutoColumnType.text(),
-        width: 60,
+        width: 40,
         enableSorting: false,
         enableFilterMenuItem: false,
         renderer: (rendererContext) {
@@ -182,6 +182,14 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
             },
           );
         },
+      ),
+      PlutoColumn(
+        title: 'NO',
+        field: 'no',
+        type: PlutoColumnType.number(),
+        width: 60,
+        enableEditingMode: false,
+        sort: PlutoColumnSort.descending,
       ),
       PlutoColumn(
         title: '등록일',
@@ -257,9 +265,15 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
             }
           }
           
-          return Text(
-            date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
-            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
+          final displayText = date != null ? DateFormat('yyyy-MM-dd').format(date) : '';
+          
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            alignment: Alignment.centerLeft,
+            child: Text(
+              displayText,
+              style: const TextStyle(fontSize: 12),
+            ),
           );
         },
       ),
@@ -282,9 +296,15 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
             }
           }
           
-          return Text(
-            date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
-            style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
+          final displayText = date != null ? DateFormat('yyyy-MM-dd').format(date) : '';
+          
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            alignment: Alignment.centerLeft,
+            child: Text(
+              displayText,
+              style: const TextStyle(fontSize: 12),
+            ),
           );
         },
       ),
@@ -364,6 +384,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     
     return displayData.map((item) => PlutoRow(cells: {
       'selected': PlutoCell(value: _selectedConnectionCodes.contains(item.code) ? 'true' : 'false'),
+      'no': PlutoCell(value: item.no),
       'regDate': PlutoCell(value: item.regDate),
       'code': PlutoCell(value: item.code ?? ''),
       'line': PlutoCell(value: item.line),
@@ -468,8 +489,8 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
       no: newNo,
       regDate: now,
       code: code,
-      line: _lines.isNotEmpty ? _lines.first : '',
-      equipment: _equipments.isNotEmpty ? _equipments.first : '',
+      line: '',
+      equipment: '',
       workType: 'MES 자동투입',
       dataType: 'PLC',
       connectionType: 'DataAgent',
@@ -869,34 +890,79 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
         Expanded(
           child: _isLoading 
             ? const Center(child: CircularProgressIndicator())
-            : Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: CommonDataTableWidget(
-                  columns: _columns,
-                  rows: _getGridRows(),
-                  currentPage: _currentPage - 1, // CommonDataTableWidget은 0부터 시작하므로 1을 빼줍니다
-                  totalPages: _totalPages,
-                  hasUnsavedChanges: _unsavedChanges,
-                  onChanged: _handleCellChanged,
-                  onPageChanged: (page) => _changePage(page + 1), // 페이지 번호에 1을 더해 _changePage 호출
-                  onLoaded: (PlutoGridOnLoadedEvent event) {
-                    _gridStateManager = event.stateManager;
-                    event.stateManager.setSelectingMode(PlutoGridSelectingMode.row);
-                  },
-                  onRowChecked: (PlutoGridOnRowCheckedEvent event) {
-                    if (event.row != null) {
-                      _toggleRowSelection(event.row!);
-                    }
-                  },
-                  legendItems: [
-                    LegendItem(label: '작업 중', color: Colors.yellow.shade100),
-                    LegendItem(label: '완료', color: Colors.green.shade100),
-                    LegendItem(label: '보류', color: Colors.red.shade100),
-                  ],
+            : _connectionData.isEmpty
+              ? _buildEmptyDataView() // 데이터가 없을 때 빈 데이터 화면 표시
+              : Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: CommonDataTableWidget(
+                    columns: _columns,
+                    rows: _getGridRows(),
+                    currentPage: _currentPage - 1, // CommonDataTableWidget은 0부터 시작하므로 1을 빼줍니다
+                    totalPages: _totalPages,
+                    hasUnsavedChanges: _unsavedChanges,
+                    onChanged: _handleCellChanged,
+                    onPageChanged: (page) => _changePage(page + 1), // 페이지 번호에 1을 더해 _changePage 호출
+                    onLoaded: (PlutoGridOnLoadedEvent event) {
+                      _gridStateManager = event.stateManager;
+                      event.stateManager.setSelectingMode(PlutoGridSelectingMode.row);
+                    },
+                    onRowChecked: (PlutoGridOnRowCheckedEvent event) {
+                      if (event.row != null) {
+                        _toggleRowSelection(event.row!);
+                      }
+                    },
+                    legendItems: [
+                      LegendItem(label: '작업 중', color: Colors.yellow.shade100),
+                      LegendItem(label: '완료', color: Colors.green.shade100),
+                      LegendItem(label: '보류', color: Colors.red.shade100),
+                    ],
+                  ),
                 ),
-              ),
         ),
       ],
+    );
+  }
+
+  // 데이터가 없을 때 표시할 뷰
+  Widget _buildEmptyDataView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.settings_ethernet_outlined,
+            size: 80,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '데이터가 없습니다',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '아래 버튼을 클릭하여 새 설비 연동 데이터를 추가해보세요',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade500,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _addNewConnection,
+            icon: const Icon(Icons.add),
+            label: const Text('첫 데이터 추가하기'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              textStyle: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1112,86 +1178,20 @@ class EquipmentFilterWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         children: [
-          // 라인 선택
+          // 상태분류 필터
           Expanded(
+            flex: 2,
             child: DropdownButtonFormField<String>(
               decoration: InputDecoration(
-                labelText: '라인',
+                labelText: '상태분류',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                isDense: true,
-              ),
-              value: selectedLine,
-              items: [
-                const DropdownMenuItem<String>(
-                  value: null,
-                  child: Text('전체'),
-                ),
-                ...lines.map((line) => DropdownMenuItem<String>(
-                  value: line,
-                  child: Text(line),
-                )),
-              ],
-              onChanged: onLineChanged,
-            ),
-          ),
-          const SizedBox(width: 12),
-          
-          // 설비 선택
-          Expanded(
-            child: DropdownButtonFormField<String>(
-              decoration: InputDecoration(
-                labelText: '설비',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                isDense: true,
-              ),
-              value: selectedEquipment,
-              items: [
-                const DropdownMenuItem<String>(
-                  value: null,
-                  child: Text('전체'),
-                ),
-                ...equipments.map((equipment) => DropdownMenuItem<String>(
-                  value: equipment,
-                  child: Text(equipment),
-                )),
-              ],
-              onChanged: onEquipmentChanged,
-            ),
-          ),
-          const SizedBox(width: 12),
-          
-          // 상태 선택
-          Expanded(
-            child: DropdownButtonFormField<String>(
-              decoration: InputDecoration(
-                labelText: '상태',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
               ),
               value: selectedStatus,
               items: [
@@ -1209,32 +1209,50 @@ class EquipmentFilterWidget extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           
-          // 통합검색
+          // 비용형태 필터 (라인 필드를 재활용)
           Expanded(
             flex: 2,
+            child: DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: '비용형태',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              ),
+              value: selectedLine,
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text('전체'),
+                ),
+                ...lines.map((line) => DropdownMenuItem<String>(
+                  value: line,
+                  child: Text(line),
+                )),
+              ],
+              onChanged: onLineChanged,
+            ),
+          ),
+          const SizedBox(width: 12),
+          
+          // 통합검색
+          Expanded(
+            flex: 3,
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
                 labelText: '통합검색',
                 hintText: '검색어 입력',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                isDense: true,
-                suffixIcon: searchController.text.isNotEmpty
-                    ? IconButton(
-                        iconSize: 20,
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          searchController.clear();
-                          onSearchChanged();
-                        },
-                      )
-                    : null,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
               ),
-              onChanged: (_) => onSearchChanged(),
+              onChanged: (_) {
+                onSearchChanged();
+              },
             ),
           ),
         ],

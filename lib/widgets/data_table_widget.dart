@@ -164,6 +164,10 @@ class CommonDataTableWidget extends StatelessWidget {
         scrollbar: const PlutoGridScrollbarConfig(
           isAlwaysShown: true,
         ),
+        columnSize: const PlutoGridColumnSizeConfig(
+          autoSizeMode: PlutoAutoSizeMode.none,
+        ),
+        enterKeyAction: PlutoGridEnterKeyAction.editingAndMoveDown,
       ),
     );
   }
