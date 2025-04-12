@@ -21,6 +21,11 @@ class _SideBarState extends State<SideBar> {
   late String _currentTime;
   late String _currentDate;
   final TextEditingController _searchController = TextEditingController();
+  
+  // 메뉴 펼침/닫힘 상태 변수 추가
+  bool _isMainMenuExpanded = true;
+  bool _isITMenuExpanded = true;
+  bool _isPlanningMenuExpanded = true;
 
   @override
   void initState() {
@@ -132,77 +137,60 @@ class _SideBarState extends State<SideBar> {
             ),
           ),
           
-          // 메인 메뉴 레이블
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'MAIN MENU',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade500,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
+          // 메뉴 영역 - Expanded와 SingleChildScrollView로 감싸서 스크롤 가능하게 함
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // 메인 메뉴 카테고리
+                  _buildMenuCategory('MAIN MENU', _isMainMenuExpanded, () {
+                    setState(() {
+                      _isMainMenuExpanded = !_isMainMenuExpanded;
+                    });
+                  }),
+                  
+                  // 메인 메뉴 항목들 (펼침/닫힘 상태에 따라 표시)
+                  if (_isMainMenuExpanded) ...[
+                    _buildMenuItem('work', '업무', Icons.business_center_outlined, widget.currentPage == 'work', true),
+                    _buildMenuItem('cost', '비용', Icons.monetization_on_outlined, widget.currentPage == 'cost', true),
+                    _buildMenuItem('kpi', 'KPI', Icons.stacked_line_chart, widget.currentPage == 'kpi', true),
+                    _buildMenuItem('education', '교육', Icons.school_outlined, widget.currentPage == 'education', true),
+                  ],
+                  
+                  // IT 메뉴 카테고리
+                  _buildMenuCategory('IT 메뉴', _isITMenuExpanded, () {
+                    setState(() {
+                      _isITMenuExpanded = !_isITMenuExpanded;
+                    });
+                  }),
+                  
+                  // IT 메뉴 항목들 (펼침/닫힘 상태에 따라 표시)
+                  if (_isITMenuExpanded) ...[
+                    _buildMenuItem('system_voc', 'VOC', Icons.feedback_outlined, widget.currentPage == 'system_voc', true),
+                    _buildMenuItem('system_update', '솔루션 개발', Icons.update, widget.currentPage == 'system_update', true),
+                    _buildMenuItem('hardware_management', '하드웨어 관리', Icons.computer_outlined, widget.currentPage == 'hardware_management', true),
+                    _buildMenuItem('software_management', '소프트웨어 관리', Icons.apps_outlined, widget.currentPage == 'software_management', true),
+                    _buildMenuItem('equipment_connection', '설비연동 관리', Icons.wifi_tethering_outlined, widget.currentPage == 'equipment_connection', true),
+                  ],
+                  
+                  // 기획 메뉴 카테고리
+                  _buildMenuCategory('기획 메뉴', _isPlanningMenuExpanded, () {
+                    setState(() {
+                      _isPlanningMenuExpanded = !_isPlanningMenuExpanded;
+                    });
+                  }),
+                  
+                  // 기획 메뉴 항목들 (펼침/닫힘 상태에 따라 표시)
+                  if (_isPlanningMenuExpanded) ...[
+                    _buildMenuItem('investment', '투자관리', Icons.trending_up, widget.currentPage == 'investment', true),
+                    _buildMenuItem('sales', '매출관리', Icons.attach_money, widget.currentPage == 'sales', true),
+                    _buildMenuItem('inventory', '재고관리', Icons.inventory_2_outlined, widget.currentPage == 'inventory', true),
+                    _buildMenuItem('personnel', '인원관리', Icons.people_outline, widget.currentPage == 'personnel', true),
+                  ],
+                ],
               ),
             ),
           ),
-          
-          // 메인 메뉴 항목들
-          _buildMenuItem('work', '업무', Icons.business_center_outlined, widget.currentPage == 'work'),
-          _buildMenuItem('cost', '비용', Icons.monetization_on_outlined, widget.currentPage == 'cost'),
-          _buildMenuItem('kpi', 'KPI', Icons.stacked_line_chart, widget.currentPage == 'kpi'),
-          _buildMenuItem('education', '교육', Icons.school_outlined, widget.currentPage == 'education'),
-          
-          // IT 메뉴 레이블
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'IT 메뉴',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade500,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ),
-          
-          // IT 메뉴 항목들
-          _buildMenuItem('system_voc', 'VOC', Icons.feedback_outlined, widget.currentPage == 'system_voc'),
-          _buildMenuItem('system_update', '솔루션 개발', Icons.update, widget.currentPage == 'system_update'),
-          _buildMenuItem('hardware_management', '하드웨어 관리', Icons.computer_outlined, widget.currentPage == 'hardware_management'),
-          _buildMenuItem('software_management', '소프트웨어 관리', Icons.apps_outlined, widget.currentPage == 'software_management'),
-          _buildMenuItem('equipment_connection', '설비연동 관리', Icons.wifi_tethering_outlined, widget.currentPage == 'equipment_connection'),
-          
-          // 기획 메뉴 레이블
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '기획 메뉴',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade500,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ),
-          
-          // 기획 메뉴 항목들
-          _buildMenuItem('investment', '투자관리', Icons.trending_up, widget.currentPage == 'investment'),
-          _buildMenuItem('sales', '매출관리', Icons.attach_money, widget.currentPage == 'sales'),
-          _buildMenuItem('inventory', '재고관리', Icons.inventory_2_outlined, widget.currentPage == 'inventory'),
-          _buildMenuItem('personnel', '인원관리', Icons.people_outline, widget.currentPage == 'personnel'),
-          
-          const Spacer(),
           
           // 하단 프로필 및 시간 영역
           Container(
@@ -276,19 +264,53 @@ class _SideBarState extends State<SideBar> {
     );
   }
   
+  // 메뉴 카테고리 위젯 (펼침/닫힘 기능 포함)
+  Widget _buildMenuCategory(String title, bool isExpanded, VoidCallback onToggle) {
+    return InkWell(
+      onTap: onToggle,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade500,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+            // 펼침/닫힘 아이콘
+            Icon(
+              isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+              size: 16,
+              color: Colors.grey.shade500,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
   // 메뉴 항목 위젯
   Widget _buildMenuItem(
     String id,
     String title,
     IconData icon,
     bool isSelected,
+    bool isSubMenu, // 하위 메뉴 여부
   ) {
     return Material(
       color: isSelected ? Colors.teal.shade50 : Colors.transparent,
       child: InkWell(
         onTap: () => widget.onPageChanged(id),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          padding: EdgeInsets.symmetric(
+            horizontal: isSubMenu ? 32.0 : 16.0, // 하위 메뉴일 경우 더 들여쓰기
+            vertical: 12.0,
+          ),
           child: Row(
             children: [
               Icon(
