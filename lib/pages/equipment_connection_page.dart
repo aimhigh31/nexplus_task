@@ -880,6 +880,9 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
                   onDeleteSelected: _deleteSelectedItems,
                   onExportExcel: _exportToExcel,
                   onImportExcel: _showAdminPasswordDialog,
+                  totalItems: _connectionData.length,
+                  currentPage: _currentPage,
+                  totalPages: _totalPages,
                 ),
               ),
             ],
@@ -1271,6 +1274,9 @@ class ActionButtonsWidget extends StatelessWidget {
   final VoidCallback onDeleteSelected;
   final VoidCallback onExportExcel;
   final VoidCallback onImportExcel;
+  final int totalItems;
+  final int currentPage;
+  final int totalPages;
 
   const ActionButtonsWidget({
     Key? key,
@@ -1282,6 +1288,9 @@ class ActionButtonsWidget extends StatelessWidget {
     required this.onDeleteSelected,
     required this.onExportExcel,
     required this.onImportExcel,
+    required this.totalItems,
+    required this.currentPage,
+    required this.totalPages,
   }) : super(key: key);
 
   @override
@@ -1290,22 +1299,22 @@ class ActionButtonsWidget extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         // 제목과 정보
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               '설비 연동관리',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
-              '설비 데이터 연동 상태 관리',
+              '전체 ${totalItems}개 항목, ${currentPage}/${totalPages} 페이지',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey,
+                color: Colors.grey[600],
               ),
             ),
           ],

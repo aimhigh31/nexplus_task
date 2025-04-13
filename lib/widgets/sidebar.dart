@@ -26,6 +26,8 @@ class _SideBarState extends State<SideBar> {
   bool _isMainMenuExpanded = true;
   bool _isITMenuExpanded = true;
   bool _isPlanningMenuExpanded = true;
+  bool _isSecurityMenuExpanded = true;
+  bool _isAdminMenuExpanded = true;
 
   @override
   void initState() {
@@ -53,7 +55,22 @@ class _SideBarState extends State<SideBar> {
   Widget build(BuildContext context) {
     return Container(
       width: 250,
-      color: Colors.white,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade300,
+            offset: const Offset(1, 0),
+            blurRadius: 3,
+          ),
+        ],
+        border: Border(
+          right: BorderSide(
+            color: Colors.grey.shade300,
+            width: 2,
+          ),
+        ),
+      ),
       child: Column(
         children: [
           // 로고 영역
@@ -143,7 +160,7 @@ class _SideBarState extends State<SideBar> {
               child: Column(
                 children: [
                   // 메인 메뉴 카테고리
-                  _buildMenuCategory('MAIN MENU', _isMainMenuExpanded, () {
+                  _buildMenuCategory('메인메뉴', _isMainMenuExpanded, () {
                     setState(() {
                       _isMainMenuExpanded = !_isMainMenuExpanded;
                     });
@@ -151,41 +168,72 @@ class _SideBarState extends State<SideBar> {
                   
                   // 메인 메뉴 항목들 (펼침/닫힘 상태에 따라 표시)
                   if (_isMainMenuExpanded) ...[
-                    _buildMenuItem('work', '업무', Icons.business_center_outlined, widget.currentPage == 'work', true),
-                    _buildMenuItem('cost', '비용', Icons.monetization_on_outlined, widget.currentPage == 'cost', true),
-                    _buildMenuItem('kpi', 'KPI', Icons.stacked_line_chart, widget.currentPage == 'kpi', true),
-                    _buildMenuItem('education', '교육', Icons.school_outlined, widget.currentPage == 'education', true),
-                  ],
-                  
-                  // IT 메뉴 카테고리
-                  _buildMenuCategory('IT 메뉴', _isITMenuExpanded, () {
-                    setState(() {
-                      _isITMenuExpanded = !_isITMenuExpanded;
-                    });
-                  }),
-                  
-                  // IT 메뉴 항목들 (펼침/닫힘 상태에 따라 표시)
-                  if (_isITMenuExpanded) ...[
-                    _buildMenuItem('system_voc', 'VOC', Icons.feedback_outlined, widget.currentPage == 'system_voc', true),
-                    _buildMenuItem('system_update', '솔루션 개발', Icons.update, widget.currentPage == 'system_update', true),
-                    _buildMenuItem('hardware_management', '하드웨어 관리', Icons.computer_outlined, widget.currentPage == 'hardware_management', true),
-                    _buildMenuItem('software_management', '소프트웨어 관리', Icons.apps_outlined, widget.currentPage == 'software_management', true),
-                    _buildMenuItem('equipment_connection', '설비연동 관리', Icons.wifi_tethering_outlined, widget.currentPage == 'equipment_connection', true),
+                    _buildMenuItem('work_management', '업무 관리', Icons.work_outline, widget.currentPage == 'work_management', true),
+                    _buildMenuItem('project_management', '프로젝트 관리', Icons.assignment_outlined, widget.currentPage == 'project_management', true),
+                    _buildMenuItem('cost_management', '비용 관리', Icons.monetization_on_outlined, widget.currentPage == 'cost_management', true),
+                    _buildMenuItem('kpi_management', 'KPI 관리', Icons.stacked_line_chart, widget.currentPage == 'kpi_management', true),
+                    _buildMenuItem('education_management', '교육 관리', Icons.school_outlined, widget.currentPage == 'education_management', true),
                   ],
                   
                   // 기획 메뉴 카테고리
-                  _buildMenuCategory('기획 메뉴', _isPlanningMenuExpanded, () {
+                  _buildMenuCategory('기획메뉴', _isPlanningMenuExpanded, () {
                     setState(() {
                       _isPlanningMenuExpanded = !_isPlanningMenuExpanded;
                     });
                   }),
                   
-                  // 기획 메뉴 항목들 (펼침/닫힘 상태에 따라 표시)
+                  // 기획 메뉴 항목들
                   if (_isPlanningMenuExpanded) ...[
-                    _buildMenuItem('investment', '투자관리', Icons.trending_up, widget.currentPage == 'investment', true),
-                    _buildMenuItem('sales', '매출관리', Icons.attach_money, widget.currentPage == 'sales', true),
-                    _buildMenuItem('inventory', '재고관리', Icons.inventory_2_outlined, widget.currentPage == 'inventory', true),
-                    _buildMenuItem('personnel', '인원관리', Icons.people_outline, widget.currentPage == 'personnel', true),
+                    _buildMenuItem('sales_management', '매출 관리', Icons.attach_money, widget.currentPage == 'sales_management', true),
+                    _buildMenuItem('inventory_management', '재고 관리', Icons.inventory_2_outlined, widget.currentPage == 'inventory_management', true),
+                    _buildMenuItem('personnel_management', '인원 관리', Icons.people_outline, widget.currentPage == 'personnel_management', true),
+                    _buildMenuItem('investment_management', '투자 관리', Icons.trending_up, widget.currentPage == 'investment_management', true),
+                  ],
+                  
+                  // IT 메뉴 카테고리
+                  _buildMenuCategory('IT메뉴', _isITMenuExpanded, () {
+                    setState(() {
+                      _isITMenuExpanded = !_isITMenuExpanded;
+                    });
+                  }),
+                  
+                  // IT 메뉴 항목들
+                  if (_isITMenuExpanded) ...[
+                    _buildMenuItem('system_voc', 'VOC', Icons.feedback_outlined, widget.currentPage == 'system_voc', true),
+                    _buildMenuItem('system_update', '솔루션 개발', Icons.update, widget.currentPage == 'system_update', true),
+                    _buildMenuItem('hardware_management', '하드웨어 관리', Icons.computer_outlined, widget.currentPage == 'hardware_management', true),
+                    _buildMenuItem('software_management', '소프트웨어 관리', Icons.apps_outlined, widget.currentPage == 'software_management', true),
+                    _buildMenuItem('equipment_connection', '설비 연동 관리', Icons.wifi_tethering_outlined, widget.currentPage == 'equipment_connection', true),
+                  ],
+                  
+                  // 보안 메뉴 카테고리
+                  _buildMenuCategory('보안메뉴', _isSecurityMenuExpanded, () {
+                    setState(() {
+                      _isSecurityMenuExpanded = !_isSecurityMenuExpanded;
+                    });
+                  }),
+                  
+                  // 보안 메뉴 항목들
+                  if (_isSecurityMenuExpanded) ...[
+                    _buildMenuItem('regulation_management', '규정 관리', Icons.policy_outlined, widget.currentPage == 'regulation_management', true),
+                    _buildMenuItem('inspection_management', '점검 관리', Icons.fact_check_outlined, widget.currentPage == 'inspection_management', true),
+                    _buildMenuItem('sec_education_management', '교육 관리', Icons.school_outlined, widget.currentPage == 'sec_education_management', true),
+                    _buildMenuItem('partner_management', '협력사 관리', Icons.handshake_outlined, widget.currentPage == 'partner_management', true),
+                    _buildMenuItem('incident_management', '사고대응 관리', Icons.warning_amber_outlined, widget.currentPage == 'incident_management', true),
+                  ],
+                  
+                  // 관리자 메뉴 카테고리
+                  _buildMenuCategory('관리자메뉴', _isAdminMenuExpanded, () {
+                    setState(() {
+                      _isAdminMenuExpanded = !_isAdminMenuExpanded;
+                    });
+                  }),
+                  
+                  // 관리자 메뉴 항목들
+                  if (_isAdminMenuExpanded) ...[
+                    _buildMenuItem('system_management', '시스템 관리', Icons.settings, widget.currentPage == 'system_management', true),
+                    _buildMenuItem('user_management', '사용자 관리', Icons.people_outline, widget.currentPage == 'user_management', true),
+                    _buildMenuItem('update_history', '업데이트 이력', Icons.history, widget.currentPage == 'update_history', true),
                   ],
                 ],
               ),

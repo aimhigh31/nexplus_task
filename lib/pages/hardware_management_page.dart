@@ -972,7 +972,7 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '하드웨어 자산 목록',
+                '하드웨어 자산',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -1558,94 +1558,89 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
 
   @override
   Widget build(BuildContext context) {
-    final pageData = _paginatedData();
-    
     return Scaffold(
       appBar: AppBar(
         title: const Text('하드웨어 관리'),
+        titleSpacing: 16.0,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: _hardwareTabs.map((tabName) => Tab(text: tabName)).toList(),
+          indicatorSize: TabBarIndicatorSize.label,
+          labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          unselectedLabelStyle: const TextStyle(fontSize: 13),
+          padding: const EdgeInsets.only(left: 16.0),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          indicatorColor: Theme.of(context).primaryColor,
+          dividerColor: Colors.transparent,
+        ),
         elevation: 0,
-        backgroundColor: const Color(0xFFF0F0F5), // 솔루션 개발 페이지와 동일한 배경색
+        backgroundColor: const Color(0xFFF0F0F5),
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: TabBarView(
+        controller: _tabController,
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          // 탭바 영역 - 솔루션 개발 페이지와 일치하도록 수정
-          Container(
-            color: const Color(0xFFF0F0F5), // 솔루션 개발 페이지와 동일한 배경색
-            child: Column(
-              children: [
-                // 탭바
-                TabBar(
-                  controller: _tabController,
-                  tabs: _hardwareTabs.map((tab) => Tab(text: tab)).toList(),
-                  onTap: (index) => setState(() {}),
-                  labelColor: Theme.of(context).primaryColor,
-                  indicatorColor: Theme.of(context).primaryColor,
-                  unselectedLabelColor: Colors.grey,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14),
-                  isScrollable: true,
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  padding: const EdgeInsets.only(left: 8),
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  indicatorPadding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                // 탭바 하단 구분선
-                Container(
-                  height: 1,
-                  color: Colors.grey.shade300,
-                ),
-              ],
-            ),
-          ),
-          
-          // 탭 컨텐츠 영역
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              physics: const AlwaysScrollableScrollPhysics(), // 스크롤 애니메이션을 일관되게
-              children: [
-                _buildDataManagementView(pageData),
-                HardwareDashboardPage(hardwareData: _hardwareData),
-              ],
-            ),
-          ),
+          _buildDataManagementTab(),
+          HardwareDashboardPage(hardwareData: _hardwareData),
         ],
       ),
     );
   }
 
-  // 데이터 관리 탭 뷰
-  Widget _buildDataManagementView(List<HardwareModel> pageData) {
-    return Container(
-      color: Colors.white,
-      child: Column(
-        children: [
-          // 1. 필터 (맨 위에 배치)
-          _buildFilterBar(),
-          
-          // 2. 타이틀과 실행버튼 (필터 아래 배치)
-          _buildTitleAndActions(),
-          
-          // 3. 범례 (타이틀과 실행버튼 아래 배치)
-          if (_hardwareData.isNotEmpty) _buildLegend(),
-          
-          // 4. 데이터 테이블 (범례 아래 배치, 확장 가능)
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _hardwareData.isEmpty
-                    ? _buildEmptyDataView()
-                    : Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                        child: _buildDataTable(),
+  Widget _buildDataManagementTab() {
+    return Column(
+      children: [
+        // 1. 필터 영역
+        _buildFilterBar(),
+        
+        // 2. 타이틀 및 버튼 영역
+        _buildTitleAndActions(),
+        
+        // 3. 데이터 테이블 영역
+        Expanded(
+          child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _hardwareData.isEmpty
+              ? _buildEmptyDataView()
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: PlutoGrid(
+                    columns: _columns,
+                    rows: _getPlutoRows(),
+                    onLoaded: (PlutoGridOnLoadedEvent event) {
+                      _gridStateManager = event.stateManager;
+                      _gridStateManager!.setShowColumnFilter(false);
+                    },
+                    onChanged: _handleCellChanged,
+                    configuration: PlutoGridConfiguration(
+                      style: PlutoGridStyleConfig(
+                        cellTextStyle: const TextStyle(fontSize: 12),
+                        columnTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        rowColor: Colors.white,
+                        oddRowColor: Colors.grey.shade50,
+                        activatedColor: Colors.blue.shade100,
+                        gridBorderColor: Colors.grey.shade300,
+                        borderColor: Colors.grey.shade300,
+                        inactivatedBorderColor: Colors.grey.shade300
                       ),
-          ),
-          
-          // 5. 페이지 네비게이션 (맨 아래에 배치)
-          if (_hardwareData.isNotEmpty && _totalPages > 0) _buildPageNavigator(),
-        ],
-      ),
+                      scrollbar: const PlutoGridScrollbarConfig(
+                        isAlwaysShown: true,
+                        scrollbarThickness: 8,
+                        scrollbarRadius: Radius.circular(4),
+                      ),
+                      columnSize: const PlutoGridColumnSizeConfig(
+                        autoSizeMode: PlutoAutoSizeMode.none,
+                      ),
+                    ),
+                    mode: PlutoGridMode.normal,
+                  ),
+                ),
+        ),
+        
+        // 4. 페이지네이션 영역
+        if (_hardwareData.isNotEmpty) _buildPageNavigator(),
+      ],
     );
   }
 
