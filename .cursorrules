@@ -1,0 +1,178 @@
+// Flutter App Expert .cursorrules
+
+const flutterBestPractices = [
+    "Adapt to existing project architecture while maintaining clean code principles",
+    "Implement clean architecture with BLoC pattern",
+    "Follow proper state management principles",
+    "Use proper dependency injection",
+    "Implement proper error handling",
+    "Follow platform-specific design guidelines",
+    "Use proper localization techniques",
+];
+
+
+// Coding Guidelines
+
+const codingGuidelines = `
+1. Use proper null safety practices
+2. Implement proper error handling with Either type
+3. Follow proper naming conventions
+4. Use proper widget composition
+5. Implement proper routing using GoRouter
+6. Use proper form validation
+7. Follow proper state management with BLoC
+8. Implement proper dependency injection using GetIt
+9. Use proper asset management
+10. Follow proper testing practices
+`;
+
+// Widget Guidelines
+
+const widgetGuidelines = `
+1. Keep widgets small and focused
+2. Use const constructors when possible
+3. Implement proper widget keys
+4. Follow proper layout principles
+5. Use proper widget lifecycle methods
+6. Implement proper error boundaries
+7. Use proper performance optimization techniques
+8. Follow proper accessibility guidelines
+`;
+
+// Performance Guidelines
+
+const performanceGuidelines = `
+1. Use proper image caching
+2. Implement proper list view optimization
+3. Use proper build methods optimization
+4. Follow proper state management patterns
+5. Implement proper memory management
+6. Use proper platform channels when needed
+7. Follow proper compilation optimization techniques
+`;
+
+// Testing Guidelines
+
+const testingTestingGuidelines = `
+1. Write unit tests for business logic
+2. Implement widget tests for UI components
+3. Use integration tests for feature testing
+4. Implement proper mocking strategies
+5. Use proper test coverage tools
+6. Follow proper test naming conventions
+7. Implement proper CI/CD testing
+`;
+
+// 프로젝트 아키텍처 가이드라인
+
+const projectArchitecture = `
+1. 모든 새 페이지는 lib/pages/ 디렉토리에 [feature]_page.dart 형식으로 생성
+2. 공통 UI 요소는 lib/widgets/ 디렉토리에 위치시키고 재사용
+3. 모든 네트워크 요청은 lib/services/api_service.dart를 통해서만 처리
+4. 데이터 모델은 lib/models/ 디렉토리에 [feature]_model.dart 형식으로 생성
+5. 상태 관리는 Provider 패턴 또는 Bloc 패턴 일관되게 사용
+6. 모든 비즈니스 로직은 서비스 레이어에서 처리
+`;
+
+// 공통 컴포넌트 가이드라인
+
+const commonComponents = `
+1. 데이터 테이블은 data_table_widget.dart 컴포넌트 재사용
+2. 폼 입력은 custom_form_field.dart 컴포넌트 사용
+3. 검색 필터는 filter_panel.dart 컴포넌트 사용
+4. 페이지네이션은 pagination_control.dart 컴포넌트 사용
+5. 다이얼로그와 모달은 custom_dialog.dart 사용
+6. 로딩 인디케이터는 loading_indicator.dart 사용
+7. 에러 표시는 error_display.dart 사용
+`;
+
+// 페이지 템플릿 가이드라인
+
+const pageTemplates = `
+1. 목록 페이지는 list_page_template.dart 구조 따름
+2. 상세 페이지는 detail_page_template.dart 구조 따름
+3. 폼 페이지는 form_page_template.dart 구조 따름
+4. 대시보드 페이지는 dashboard_template.dart 구조 따름
+5. 모든 템플릿은 다음 요소 포함: AppBar, 제목, 액션 버튼, 본문 영역, Footer(필요시)
+`;
+
+// API 통신 가이드라인
+
+const apiCommunication = `
+1. 모든 HTTP 요청은 lib/services/api_service.dart의 _safeGet, _safePost 등 메소드 사용
+2. API 엔드포인트 상수는 lib/constants/api_endpoints.dart에 정의
+3. API 요청 결과는 적절한 모델 클래스로 변환하여 반환
+4. 모든 API 에러는 통일된 에러 핸들링 메커니즘 사용
+5. 캐싱이 필요한 데이터는 local_storage_service.dart 활용
+`;
+
+// 스타일 가이드라인
+
+const styleGuidelines = `
+1. 모든 색상은 lib/constants/app_colors.dart에서 정의된 상수 사용
+2. 텍스트 스타일은 lib/constants/text_styles.dart에서 정의된 스타일 사용
+3. 여백과 크기는 lib/constants/dimensions.dart에서 정의된 상수 사용
+4. 애니메이션은 lib/constants/animations.dart에서 정의된 애니메이션 사용
+5. 아이콘은 lib/constants/app_icons.dart에서 정의된 아이콘 사용
+`;
+
+// 코드 구조화 가이드라인
+
+const codeStructuring = `
+1. 파일 상단에 관련 import 순서: dart 내장 > 패키지 > 프로젝트 내부
+2. 클래스 멤버 순서: 상수 > 변수 > 생성자 > 메소드
+3. 메소드 길이는 최대 50줄 이내로 유지
+4. 한 파일의 길이는 최대 500줄 이내로 유지, 초과 시 분리 고려
+5. 주석은 '왜'에 중점을 두고 작성, 명확한 코드는 주석 불필요
+`;
+
+// 상태 관리 가이드라인
+
+const stateManagementGuidelines = `
+1. 지역 상태는 StatefulWidget과 setState() 사용
+2. 전역 상태나 복잡한 상태는 Provider 또는 Bloc 패턴 사용
+3. 상태 관리 로직은 UI 코드와 분리하여 별도 클래스로 구현
+4. 비동기 작업은 Future/Stream을 사용하여 상태 변화 관리
+5. immutable 상태 객체 사용으로 예측 가능한 상태 변화 보장
+`;
+
+// 에러 처리 가이드라인
+
+const errorHandlingGuidelines = `
+1. 모든 API 호출은 try-catch로 감싸서 예외 처리
+2. 에러 메시지는 사용자 친화적으로 표시
+3. 개발 모드에서는 상세 에러 로그 출력, 프로덕션 모드에서는 간결히 처리
+4. 치명적 에러는 전용 에러 페이지로 리디렉션
+5. 네트워크 에러는 자동 재시도 메커니즘 구현
+`;
+
+// 네비게이션 가이드라인
+
+const navigationGuidelines = `
+1. 모든 페이지 라우트는 lib/routes.dart에 중앙 관리
+2. 페이지 전환은 main.dart에 정의된 네비게이션 시스템만 사용
+3. 부모-자식 페이지 간 데이터 전달은 생성자 파라미터 사용
+4. 깊은 네비게이션(3단계 이상)은 별도의 네비게이션 서비스 사용
+5. 뒤로가기 동작은 일관되게 구현
+`;
+
+// 퍼포먼스 최적화 가이드라인
+
+const performanceOptimizationGuidelines = `
+1. 무거운 컴포넌트는 StatefulWidget.build 외부에서 초기화
+2. 불필요한 빌드 방지를 위해 const 생성자 사용
+3. 대량 데이터 렌더링 시 ListView.builder 활용
+4. 이미지는 적절한 캐싱과 압축 적용
+5. 애니메이션은 RepaintBoundary로 분리
+6. 개발 모드에서 정기적으로 Performance Overlay 검사
+`;
+
+// 백엔드 연동 가이드라인
+
+const backendIntegrationGuidelines = `
+1. 모든 API 모델은 toJson/fromJson 메소드 구현
+2. 백엔드 API 변경 시 관련 모델 클래스도 함께 업데이트
+3. API 요청 타임아웃과 재시도 정책 일관되게 적용
+4. 네트워크 상태에 따른 오프라인 모드 지원 고려
+5. 대량 데이터는 페이지네이션 구현으로 효율적 로딩
+`;
