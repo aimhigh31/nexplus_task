@@ -80,11 +80,26 @@ class EquipmentConnectionDataPage extends StatefulWidget {
 }
 
 class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPage> {
+  // API 서비스
   final ApiService _apiService = ApiService();
-  final List<EquipmentConnectionModel> _connectionData = [];
-  final Set<String> _selectedConnectionCodes = <String>{};
-  final TextEditingController _searchController = TextEditingController();
   
+  // 설비 연동 데이터
+  List<EquipmentConnectionModel> _connectionData = [];
+  
+  // 선택된 항목 코드 목록
+  final Set<String> _selectedConnectionCodes = <String>{};
+  
+  // 그리드 상태 관리자
+  PlutoGridStateManager? _gridStateManager;
+  
+  // 페이지네이션 및 필터 상태
+  int _currentPage = 1;
+  int _totalPages = 1;
+  int _totalItems = 0;
+  final int _rowsPerPage = 20;
+  
+  // 필터 상태
+  final TextEditingController _searchController = TextEditingController();
   String? _selectedLine;
   String? _selectedEquipment;
   String? _selectedWorkType;
@@ -92,25 +107,58 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   String? _selectedConnectionType;
   String? _selectedStatus;
   
-  bool _isLoading = true;
-  bool _unsavedChanges = false;
-  bool _hasSelectedItems = false;
-  
-  // 페이지네이션 상태
-  int _currentPage = 1;
-  int _rowsPerPage = 13;
-  int _totalPages = 1;
-  
   // 데이터 테이블 관련
-  PlutoGridStateManager? _gridStateManager;
   List<PlutoColumn> _columns = [];
   
   // 필터링을 위한 리스트
   List<String> _lines = [];
   List<String> _equipments = [];
   
+  // 디바운서
   Timer? _debounce;
-
+  Timer? _debounceTimer;
+  
+  // 로딩 상태 및 기타 플래그
+  bool _isLoading = false;
+  bool _hasSelectedItems = false;
+  bool _unsavedChanges = false;
+  
+  // 행 키로 설비 연동 데이터 찾기
+  EquipmentConnectionModel? _findEquipmentConnectionByRowKey(String rowKey) {
+    final index = _connectionData.indexWhere((item) => item.code == rowKey);
+    if (index >= 0) {
+      return _connectionData[index];
+    }
+    return null;
+  }
+  
+  // 설비 연동 데이터 저장
+  Future<bool> _saveEquipmentConnection(EquipmentConnectionModel connection) async {
+    try {
+      final result = connection.isNew
+          ? await _apiService.addEquipmentConnection(connection)
+          : await _apiService.updateEquipmentConnection(connection);
+      
+      if (result != null) {
+        final index = _connectionData.indexWhere((item) => item.code == connection.code);
+        if (index >= 0) {
+          setState(() {
+            _connectionData[index] = result.copyWith(
+              isModified: false, 
+              isNew: false
+            );
+            _unsavedChanges = _connectionData.any((item) => item.isModified || item.isNew);
+          });
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      debugPrint('설비 연동 데이터 저장 오류: $e');
+      return false;
+    }
+  }
+  
   @override
   void initState() {
     super.initState();
@@ -121,7 +169,9 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   @override
   void dispose() {
     _debounce?.cancel();
+    _debounceTimer?.cancel();
     _searchController.dispose();
+    _gridStateManager = null;
     super.dispose();
   }
   
@@ -400,77 +450,82 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     })).toList();
   }
   
-  // 데이터 셀 변경 처리
-  void _handleCellChanged(PlutoGridOnChangedEvent event) {
-    final rowIdx = _gridStateManager!.rows.indexOf(event.row);
-    if (rowIdx < 0) return;
+  // 셀 값 변경 처리
+  Future<void> _handleCellChanged(PlutoGridOnChangedEvent event) async {
+    // 셀 값을 즉시 UI에 반영
+    event.row.cells[event.column.field]!.value = event.value;
     
-    final pageStartIdx = (_currentPage - 1) * _rowsPerPage;
-    final dataIdx = pageStartIdx + rowIdx;
+    // 변경된 행 데이터 찾기
+    final rowKey = event.row.cells['code']!.value.toString();
+    final connectionIndex = _connectionData.indexWhere((item) => item.code == rowKey);
+    if (connectionIndex < 0) return;
     
-    if (dataIdx >= _connectionData.length) return;
-    
-    final connection = _connectionData[dataIdx];
-    EquipmentConnectionModel updatedConnection;
-    
-    final field = event.column.field;
-    final value = event.value;
-    
-    switch (field) {
+    final rowData = _connectionData[connectionIndex];
+
+    // 변경된 필드에 따라 데이터 업데이트 (copyWith 사용)
+    EquipmentConnectionModel updatedData;
+    switch (event.column.field) {
       case 'line':
-        updatedConnection = connection.copyWith(line: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(line: event.value.toString(), isModified: true);
         break;
       case 'equipment':
-        updatedConnection = connection.copyWith(equipment: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(equipment: event.value.toString(), isModified: true);
         break;
       case 'workType':
-        updatedConnection = connection.copyWith(workType: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(workType: event.value.toString(), isModified: true);
         break;
       case 'dataType':
-        updatedConnection = connection.copyWith(dataType: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(dataType: event.value.toString(), isModified: true);
         break;
       case 'connectionType':
-        updatedConnection = connection.copyWith(connectionType: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(connectionType: event.value.toString(), isModified: true);
         break;
       case 'status':
-        updatedConnection = connection.copyWith(status: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(status: event.value.toString(), isModified: true);
         break;
       case 'detail':
-        updatedConnection = connection.copyWith(detail: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(detail: event.value.toString(), isModified: true);
         break;
       case 'startDate':
-        updatedConnection = connection.copyWith(startDate: value, isModified: true);
+        updatedData = rowData.copyWith(startDate: event.value is DateTime ? event.value : null, isModified: true);
         break;
       case 'completionDate':
-        updatedConnection = connection.copyWith(completionDate: value, isModified: true);
+        updatedData = rowData.copyWith(completionDate: event.value is DateTime ? event.value : null, isModified: true);
         break;
       case 'remarks':
-        updatedConnection = connection.copyWith(remarks: value ?? '', isModified: true);
+        updatedData = rowData.copyWith(remarks: event.value.toString(), isModified: true);
         break;
       default:
-        return;
+        return; // 수정 가능한 필드가 아니면 무시
     }
-    
+
+    // 업데이트된 데이터로 배열 갱신
     setState(() {
-      _connectionData[dataIdx] = updatedConnection;
+      _connectionData[connectionIndex] = updatedData;
       _unsavedChanges = true;
     });
+
+    // 그리드 상태 관리자에게 변경 알림 (UI 새로고침)
+    _gridStateManager?.notifyListeners();
   }
   
   // 그리드 새로고침
   void _refreshGrid() {
-    if (_gridStateManager == null) return;
+    if (!mounted || _gridStateManager == null) return;
     
-    _gridStateManager!.removeAllRows();
-    _gridStateManager!.appendRows(_getGridRows());
-    
-    // 스크롤을 맨 위로 이동 (안전하게 처리)
     try {
+      _gridStateManager!.removeAllRows();
+      _gridStateManager!.appendRows(_getGridRows());
+      
+      // 스크롤을 맨 위로 이동 (안전하게 처리)
       if (_gridStateManager!.scroll.vertical != null) {
         _gridStateManager!.scroll.vertical!.jumpTo(0);
       }
+      
+      // 그리드 상태 관리자에 변경 알림
+      _gridStateManager!.notifyListeners();
     } catch (e) {
-      debugPrint('스크롤 이동 오류: $e');
+      debugPrint('그리드 새로고침 오류: $e');
     }
   }
   

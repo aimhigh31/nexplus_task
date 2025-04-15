@@ -734,23 +734,43 @@ const initMongoDB = async () => {
         if (collections.length === 0) {
           console.log('connection 컬렉션이 없습니다. 컬렉션을 생성합니다.');
           await mongoose.connection.db.createCollection('connection');
+          console.log('connection 컬렉션이 성공적으로 생성되었습니다.');
+          
+          // 필요한 인덱스 생성
+          const connectionCollection = mongoose.connection.db.collection('connection');
+          await connectionCollection.createIndex({ 'code': 1 }, { unique: true });
+          await connectionCollection.createIndex({ 'line': 1 });
+          await connectionCollection.createIndex({ 'equipment': 1 });
+          await connectionCollection.createIndex({ 'status': 1 });
+          console.log('connection 컬렉션 인덱스 생성 완료.');
         }
         
         // 데이터 초기화
         const equipmentConnectionCount = await EquipmentConnection.countDocuments();
+        console.log(`현재 connection 컬렉션의 데이터 수: ${equipmentConnectionCount}`);
+        
         if (equipmentConnectionCount === 0) {
           const sampleEquipmentConnectionData = getSampleEquipmentConnectionData();
-          await EquipmentConnection.insertMany(sampleEquipmentConnectionData);
-          console.log('샘플 설비 연동관리 데이터가 connection 컬렉션에 추가되었습니다.');
+          console.log(`설비 연동관리 샘플 데이터 ${sampleEquipmentConnectionData.length}개를 추가합니다.`);
+          
+          // 데이터 삽입 전 로깅
+          sampleEquipmentConnectionData.forEach((item, index) => {
+            console.log(`데이터 ${index + 1}: 코드=${item.code}, 라인=${item.line}, 설비=${item.equipment}, 상태=${item.status}`);
+          });
+          
+          const result = await EquipmentConnection.insertMany(sampleEquipmentConnectionData);
+          console.log(`설비 연동관리 ${result.length}개 데이터가 connection 컬렉션에 성공적으로 추가되었습니다.`);
         } else {
-          console.log(`connection 컬렉션에 ${equipmentConnectionCount}개의 데이터가 있습니다.`);
+          console.log(`connection 컬렉션에 이미 ${equipmentConnectionCount}개의 데이터가 있습니다.`);
         }
+        
+        // 연결 및 데이터 확인 로깅
+        const verifyCount = await EquipmentConnection.countDocuments();
+        console.log(`설비 연동관리 데이터 검증: connection 컬렉션에 ${verifyCount}개의 데이터가 있습니다.`);
+        
       } catch (connectionError) {
         console.error('설비 연동관리 초기화 오류:', connectionError.message);
         console.log('설비 연동관리 초기화를 다시 시도합니다...');
-        
-        // 샘플 데이터 생성
-        const sampleEquipmentConnectionData = getSampleEquipmentConnectionData();
         
         // 컬렉션 삭제 후 재생성 시도
         try {
@@ -760,13 +780,38 @@ const initMongoDB = async () => {
           console.log('connection 컬렉션 삭제 실패 (존재하지 않을 수 있음):', dropError.message);
         }
         
-        // 새 컬렉션에 데이터 삽입 시도
         try {
+          // 컬렉션 생성
           await mongoose.connection.db.createCollection('connection');
-          await EquipmentConnection.insertMany(sampleEquipmentConnectionData);
-          console.log('설비 연동관리 데이터 초기화 성공!');
-        } catch (insertError) {
-          console.error('설비 연동관리 데이터 삽입 오류:', insertError.message);
+          console.log('connection 컬렉션을 새로 생성했습니다.');
+          
+          // 인덱스 생성
+          const connectionCollection = mongoose.connection.db.collection('connection');
+          await connectionCollection.createIndex({ 'code': 1 }, { unique: true });
+          await connectionCollection.createIndex({ 'line': 1 });
+          await connectionCollection.createIndex({ 'equipment': 1 });
+          await connectionCollection.createIndex({ 'status': 1 });
+          console.log('connection 컬렉션 인덱스 생성 완료.');
+          
+          // 샘플 데이터 생성
+          const sampleEquipmentConnectionData = getSampleEquipmentConnectionData();
+          
+          // 수동으로 각 문서 삽입
+          const insertResults = [];
+          for (const data of sampleEquipmentConnectionData) {
+            try {
+              const newConnection = new EquipmentConnection(data);
+              const result = await newConnection.save();
+              insertResults.push(result);
+              console.log(`데이터 추가 성공: ${data.code}`);
+            } catch (saveError) {
+              console.error(`데이터 저장 실패 (${data.code}): ${saveError.message}`);
+            }
+          }
+          
+          console.log(`설비 연동관리 ${insertResults.length}개 데이터 초기화 성공!`);
+        } catch (createError) {
+          console.error('설비 연동관리 컬렉션 생성 오류:', createError.message);
         }
       }
       
