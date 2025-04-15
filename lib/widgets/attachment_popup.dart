@@ -58,8 +58,36 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
       );
 
       if (mounted) {
+        // 첨부파일 모델의 originalFilename 필드 디코딩 처리
+        final List<AttachmentModel> decodedAttachments = attachments.map((attachment) {
+          // 한글 파일명 깨짐 문제 해결을 위한 디코딩
+          try {
+            String decodedFilename = Uri.decodeComponent(attachment.originalFilename);
+            // Safari와 Firefox에서 이중 인코딩 문제 해결
+            if (decodedFilename.contains('%')) {
+              decodedFilename = Uri.decodeComponent(decodedFilename);
+            }
+            
+            return AttachmentModel(
+              id: attachment.id,
+              fileName: attachment.fileName,
+              originalFilename: decodedFilename,
+              size: attachment.size,
+              mimeType: attachment.mimeType,
+              uploadDate: attachment.uploadDate,
+              uploaderId: attachment.uploaderId,
+              uploaderName: attachment.uploaderName,
+              relatedEntityId: attachment.relatedEntityId,
+              relatedEntityType: attachment.relatedEntityType,
+            );
+          } catch (e) {
+            debugPrint('파일명 디코딩 오류: $e, 원본 유지');
+            return attachment;
+          }
+        }).toList();
+        
         setState(() {
-          _attachments = attachments;
+          _attachments = decodedAttachments;
           _isLoading = false;
         });
         debugPrint('첨부파일 목록 로드 완료 - ${attachments.length}개 항목');
@@ -412,7 +440,10 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
         );
       }
       
-      debugPrint('첨부파일 다운로드 시작: ${attachment.id} - ${attachment.originalFilename}');
+      // 한글 파일명 깨짐 방지를 위해 UTF-8 인코딩 적용
+      String decodedFilename = Uri.decodeComponent(attachment.originalFilename);
+      
+      debugPrint('첨부파일 다운로드 시작: ${attachment.id} - $decodedFilename');
       final success = await _apiService.downloadAttachment(attachment.id!);
       
       if (mounted) {
@@ -427,7 +458,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: Text(
-                      '${attachment.originalFilename} 다운로드 완료',
+                      '$decodedFilename 다운로드 완료',
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -446,7 +477,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('파일명: ${attachment.originalFilename}'),
+                          Text('파일명: $decodedFilename'),
                           const SizedBox(height: 8),
                           const Text('웹 환경: 브라우저 다운로드 폴더에 저장되었습니다.'),
                           const Text('데스크톱 환경: 선택한 경로에 저장되었습니다.'),
@@ -476,7 +507,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${attachment.originalFilename} 파일을 다운로드하지 못했습니다.'),
+                  Text('$decodedFilename 파일을 다운로드하지 못했습니다.'),
                   const SizedBox(height: 12),
                   const Text('가능한 해결 방법:', style: TextStyle(fontWeight: FontWeight.bold)),
                   const Text('• 인터넷 연결을 확인해주세요'),
@@ -892,6 +923,9 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
         final dateFormat = DateFormat('yyyy-MM-dd HH:mm');
         final isSelected = attachment.id != null && _selectedAttachments.contains(attachment.id);
         
+        // 파일명이 표시될 텍스트 위젯 (디코딩된 파일명 사용)
+        final filename = attachment.originalFilename;
+        
         return ListTile(
           leading: Row(
             mainAxisSize: MainAxisSize.min,
@@ -909,7 +943,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
             ],
           ),
           title: Text(
-            attachment.originalFilename,
+            filename, // 디코딩된 파일명 표시
             style: const TextStyle(fontSize: 14),
             overflow: TextOverflow.ellipsis,
           ),

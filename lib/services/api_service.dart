@@ -1,44 +1,37 @@
+// 표준 Dart 라이브러리 임포트
 import 'dart:convert';
 import 'dart:math';
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+import 'dart:io';
+
+// Flutter 패키지 임포트
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
+
+// 외부 패키지 임포트
 import 'package:http/http.dart' as http;
-import '../models/voc_model.dart';
 import 'package:intl/intl.dart';
-import '../models/system_update_model.dart';
-import '../models/hardware_model.dart';
-import '../models/software_model.dart';
-import '../models/equipment_connection_model.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:file_picker/file_picker.dart';
-import '../models/attachment_model.dart';
-import 'dart:io';
-import 'dart:html' if (dart.library.html) 'dart:html' as html;
 import 'package:dio/dio.dart';
 import 'package:mime/mime.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:io';
-import 'dart:convert';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
-import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
-import 'package:intl/intl.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:file_saver/file_saver.dart';
-import 'package:mime/mime.dart';
-import 'package:dio/dio.dart';
-import 'package:http_parser/http_parser.dart';
-import '../models/attachment_model.dart';
-// 다운로드 폴더 경로 가져오기 위한 패키지
 import 'package:path_provider/path_provider.dart';
 
-// 웹 환경에서 사용하기 위한 dart:html 임포트
+// 프로젝트 모델 임포트
+import '../models/voc_model.dart';
+import '../models/system_update_model.dart';
+import '../models/hardware_model.dart';
+import '../models/software_model.dart';
+import '../models/equipment_connection_model.dart';
+import '../models/attachment_model.dart';
+
+// 플랫폼 특화 임포트 (조건부 임포트)
 import 'dart:html' as html if (dart.library.io) '../platform/stub_html.dart';
 
 // UUID 생성 유틸리티 함수
@@ -52,6 +45,7 @@ String _generateUuid() {
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   final String _baseUrl = 'http://localhost:3000/api';
+  final Dio _dio = Dio(); // Use Dio for file uploads
   
   // 싱글톤 패턴 구현
   factory ApiService() => _instance;
@@ -633,11 +627,11 @@ class ApiService {
         ['solution-development', 'db/solution', 'memory/system-updates']
       );
       
-      // 3. 서버 MongoDB에 직접 저장 시도 (새로 구현한 saveToDatabase 메서드 사용)
-      if (!isSuccess) {
-        debugPrint('다중 API 저장 실패, DB 직접 저장 시도...');
-        isSuccess = await saveToDatabase('solution', updateData);
-      }
+      // 3. 서버 MongoDB에 직접 저장 시도 (제거)
+      // if (!isSuccess) {
+      //   debugPrint('다중 API 저장 실패, DB 직접 저장 시도...');
+      //   isSuccess = await saveToDatabase('solution', updateData); // <-- REMOVE THIS LINE
+      // }
       
       if (isSuccess) {
         logToServer('INFO', '솔루션 개발 데이터 저장 성공', 
@@ -906,76 +900,9 @@ class ApiService {
         }
       }
       
-      // 다섯 번째 시도: 직접 DB 삭제
-      if (!isSuccess) {
-        try {
-          final uri = Uri.parse('$_baseUrl/db/delete');
-          debugPrint('시도 5 (직접 DB 삭제): $uri');
-          
-          final dbPayload = {
-            'collection': 'solution',
-            'filter': {'updateCode': code}
-          };
-          
-          final response = await http.post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(dbPayload),
-          ).timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => http.Response('Timeout', 408),
-          );
-          
-          debugPrint('직접 DB 삭제 응답 상태: ${response.statusCode}');
-          debugPrint('응답 본문: ${response.body}');
-          
-          if (response.statusCode == 200 || response.statusCode == 204) {
-            isSuccess = true;
-            endpoint = 'db/delete';
-            debugPrint('직접 DB 삭제 성공');
-          } else {
-            debugPrint('직접 DB 삭제 실패: ${response.statusCode}');
-          }
-        } catch (e) {
-          debugPrint('직접 DB 삭제 예외: $e');
-        }
-      }
+      debugPrint('삭제 작업 결과: $isSuccess, 사용 엔드포인트: $endpoint');
       
-      // 성공 시 로그 출력
-      if (isSuccess) {
-        debugPrint('사용 엔드포인트: $endpoint');
-        
-        // 로컬 저장소에서도 해당 데이터 삭제
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          final localKey = 'solution_$code';
-          if (prefs.containsKey(localKey)) {
-            await prefs.remove(localKey);
-            debugPrint('로컬 저장소에서도 삭제 완료: $localKey');
-          }
-        } catch (e) {
-          debugPrint('로컬 저장소 삭제 실패: $e');
-        }
-      } else {
-        // 모든 시도 실패 시 임시 성공 처리
-        debugPrint('모든 API 엔드포인트 삭제 실패, 로컬 삭제 처리');
-        
-        // 로컬 저장소에서만 삭제
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          final localKey = 'solution_$code';
-          if (prefs.containsKey(localKey)) {
-            await prefs.remove(localKey);
-            debugPrint('로컬 저장소에서만 삭제 완료: $localKey');
-          }
-        } catch (e) {
-          debugPrint('로컬 저장소 삭제 실패: $e');
-        }
-        
-        await Future.delayed(const Duration(milliseconds: 300));
-      }
-      
-      return true;
+      return isSuccess;
     } catch (e) {
       _logError('솔루션 개발 데이터 삭제', e);
       await Future.delayed(const Duration(milliseconds: 300));
@@ -2098,162 +2025,51 @@ class ApiService {
   
   // ========================== 첨부파일 관련 메서드 ==========================
   
-  // 첨부파일 목록 조회
+  // 첨부파일 목록 조회 (New endpoint)
   Future<List<AttachmentModel>> getAttachments({
     required String entityId,
     required String entityType,
   }) async {
     try {
-      debugPrint('=== 첨부파일 목록 조회 시작 ===');
-      debugPrint('엔티티ID: $entityId');
-      debugPrint('엔티티타입: $entityType');
-      
-      // 첨부파일 목록을 저장할 변수
-      final List<AttachmentModel> attachments = [];
-      
-      // 먼저 로컬 저장소에서 데이터 확인 (서버에서 실패하더라도 로컬 데이터는 보여주기 위함)
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final localAttachmentsKey = 'attachments_${entityId}_${entityType}';
-        final jsonString = prefs.getString(localAttachmentsKey);
-        
-        if (jsonString != null) {
-          final List<dynamic> localDataList = jsonDecode(jsonString);
-          debugPrint('로컬 저장소에서 첨부파일 ${localDataList.length}개 발견');
-          
-          for (var data in localDataList) {
-            try {
-              // _id 필드를 id로 매핑
-              if (data['_id'] != null && data['id'] == null) {
-                data['id'] = data['_id'];
-              }
-              
-              attachments.add(AttachmentModel.fromJson(data));
-            } catch (e) {
-              debugPrint('로컬 첨부파일 데이터 변환 실패: $e');
-            }
-          }
-        } else {
-          debugPrint('로컬 저장소에 첨부파일 데이터 없음');
-        }
-      } catch (e) {
-        debugPrint('로컬 저장소 첨부파일 조회 실패: $e');
-      }
-      
-      // 서버에서 첨부파일 조회 시도 (솔루션 개발 API)
-      try {
-        final uri = Uri.parse('$_baseUrl/solution-development/attachments')
-            .replace(queryParameters: {
-          'relatedEntityId': entityId,
-          'relatedEntityType': entityType,
-        });
-        
-        debugPrint('솔루션 개발 첨부파일 목록 요청: $uri');
-        
-        final response = await _safeGet(uri);
-        
-        if (response.statusCode == 200) {
-          final List<dynamic> serverDataList = json.decode(response.body);
-          debugPrint('서버에서 첨부파일 ${serverDataList.length}개 조회 성공');
-          
-          // 서버 조회 성공 시 기존 첨부파일 목록을 지우고 서버 데이터로 대체
-          attachments.clear();
-          
-          for (var data in serverDataList) {
-            try {
-              // _id 필드를 id로 매핑
-              if (data['_id'] != null && data['id'] == null) {
-                data['id'] = data['_id'];
-              }
-              
-              attachments.add(AttachmentModel.fromJson(data));
-            } catch (e) {
-              debugPrint('서버 첨부파일 데이터 변환 실패: $e');
-            }
-          }
-          
-          // 서버 데이터를 로컬에도 캐싱
+      debugPrint('=== 첨부파일 목록 조회 시작 (신규 API) ===');
+      debugPrint('엔티티ID: $entityId, 엔티티타입: $entityType');
+
+      final uri = Uri.parse('$_baseUrl/attachments').replace(queryParameters: {
+        'relatedEntityId': entityId,
+        'relatedEntityType': entityType,
+      });
+
+      final response = await _safeGet(uri);
+
+      if (response.statusCode == 200) {
+        final List<dynamic> dataList = json.decode(response.body);
+        debugPrint('첨부파일 목록 조회 성공: ${dataList.length}개 항목');
+
+        List<AttachmentModel> attachments = [];
+        for (var data in dataList) {
           try {
-            final prefs = await SharedPreferences.getInstance();
-            final localAttachmentsKey = 'attachments_${entityId}_${entityType}';
-            
-            final List<Map<String, dynamic>> attachmentJsonList = 
-                attachments.map((a) => a.toJson()).toList();
-            
-            await prefs.setString(localAttachmentsKey, jsonEncode(attachmentJsonList));
-            debugPrint('서버 첨부파일 데이터 로컬 캐싱 완료');
+            // _id 필드를 id로 매핑
+            if (data['_id'] != null && data['id'] == null) {
+              data['id'] = data['_id'];
+            }
+            attachments.add(AttachmentModel.fromJson(data));
           } catch (e) {
-            debugPrint('서버 첨부파일 데이터 로컬 캐싱 실패: $e');
+            _logError('첨부파일 데이터 변환', e, null, data);
           }
-        } else {
-          debugPrint('솔루션 개발 첨부파일 목록 조회 실패: ${response.statusCode}');
-          debugPrint('응답 본문: ${response.body}');
         }
-      } catch (e) {
-        debugPrint('솔루션 개발 첨부파일 목록 조회 중 예외 발생: $e');
+        // No need for local caching here as server is the source of truth
+        return attachments;
+      } else {
+        _logError('첨부파일 목록 조회', '상태 코드: ${response.statusCode}', uri.toString(), response.body);
+        return [];
       }
-      
-      // 메모리 API에서 첨부파일 조회 시도 (로컬에 없고 solution-development API에서도 실패한 경우)
-      if (attachments.isEmpty) {
-        try {
-          final uri = Uri.parse('$_baseUrl/memory/attachments')
-              .replace(queryParameters: {
-            'relatedEntityId': entityId,
-            'relatedEntityType': entityType,
-          });
-          
-          debugPrint('메모리 첨부파일 목록 요청: $uri');
-          
-          final response = await _safeGet(uri);
-          
-          if (response.statusCode == 200) {
-            final List<dynamic> memoryDataList = json.decode(response.body);
-            debugPrint('메모리에서 첨부파일 ${memoryDataList.length}개 조회 성공');
-            
-            for (var data in memoryDataList) {
-              try {
-                // _id 필드를 id로 매핑
-                if (data['_id'] != null && data['id'] == null) {
-                  data['id'] = data['_id'];
-                }
-                
-                attachments.add(AttachmentModel.fromJson(data));
-              } catch (e) {
-                debugPrint('메모리 첨부파일 데이터 변환 실패: $e');
-              }
-            }
-            
-            // 메모리 데이터를 로컬에도 캐싱
-            try {
-              final prefs = await SharedPreferences.getInstance();
-              final localAttachmentsKey = 'attachments_${entityId}_${entityType}';
-              
-              final List<Map<String, dynamic>> attachmentJsonList = 
-                  attachments.map((a) => a.toJson()).toList();
-              
-              await prefs.setString(localAttachmentsKey, jsonEncode(attachmentJsonList));
-              debugPrint('메모리 첨부파일 데이터 로컬 캐싱 완료');
-            } catch (e) {
-              debugPrint('메모리 첨부파일 데이터 로컬 캐싱 실패: $e');
-            }
-          } else {
-            debugPrint('메모리 첨부파일 목록 조회 실패: ${response.statusCode}');
-            debugPrint('응답 본문: ${response.body}');
-          }
-        } catch (e) {
-          debugPrint('메모리 첨부파일 목록 조회 중 예외 발생: $e');
-        }
-      }
-      
-      debugPrint('첨부파일 목록 조회 완료 - ${attachments.length}개 항목');
-      return attachments;
     } catch (e) {
-      debugPrint('첨부파일 목록 조회 중 예외 발생: $e');
+      _logError('첨부파일 목록 조회', e);
       return [];
     }
   }
-  
-  // 첨부파일 업로드 (바이트 데이터)
+
+  // 첨부파일 업로드 (New endpoint)
   Future<AttachmentModel?> uploadFile({
     required List<int> fileBytes,
     required String fileName,
@@ -2261,179 +2077,76 @@ class ApiService {
     required String entityType,
   }) async {
     try {
-      debugPrint('=== 첨부파일 업로드 시작 ===');
-      debugPrint('파일명: $fileName');
-      debugPrint('엔티티ID: $entityId');
-      debugPrint('엔티티타입: $entityType');
-      logToServer('INFO', '첨부파일 업로드 시작', 
-          data: {'fileName': fileName, 'entityId': entityId, 'entityType': entityType});
-      
-      // 바로 로컬 저장 처리를 시작합니다 - 중복 저장 방지를 위해 ID 미리 생성
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final random = Random().nextInt(10000);
-      final id = 'local_${now}_$random';
-      
-      // 파일 MIME 타입 확인
+      debugPrint('=== 첨부파일 업로드 시작 (신규 API) ===');
+      debugPrint('파일명: $fileName, 엔티티ID: $entityId, 엔티티타입: $entityType');
+      logToServer('INFO', '첨부파일 업로드 시작 (신규 API)', data: {'fileName': fileName, 'entityId': entityId});
+
       final mimeType = _getMimeType(fileName);
-      
-      // 로컬에 저장할 AttachmentModel 만들기
-      final attachment = AttachmentModel(
-        id: id,
-        fileName: fileName,
-        originalFilename: fileName,
-        size: fileBytes.length,
-        mimeType: mimeType,
-        uploadDate: DateTime.now(),
-        relatedEntityId: entityId,
-        relatedEntityType: entityType,
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(
+          fileBytes,
+          filename: fileName,
+          contentType: MediaType.parse(mimeType),
+        ),
+        'relatedEntityId': entityId,
+        'relatedEntityType': entityType,
+      });
+
+      final response = await _dio.post(
+        '$_baseUrl/attachments',
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          receiveTimeout: const Duration(seconds: 60), // Increase timeout for larger files
+          sendTimeout: const Duration(seconds: 60),
+        ),
       );
-      
-      // 로컬 스토리지에 첨부파일 정보 저장
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final localAttachmentsKey = 'attachments_${entityId}_${entityType}';
-        
-        // 기존 첨부파일 목록 불러오기
-        List<Map<String, dynamic>> existingAttachments = [];
-        final jsonString = prefs.getString(localAttachmentsKey);
-        
-        if (jsonString != null) {
-          final decoded = jsonDecode(jsonString);
-          if (decoded is List) {
-            existingAttachments = decoded.cast<Map<String, dynamic>>();
-          }
+
+      debugPrint('첨부파일 업로드 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 201) {
+        final data = response.data;
+        // _id 필드를 id로 매핑
+        if (data['_id'] != null && data['id'] == null) {
+          data['id'] = data['_id'];
         }
-        
-        // 새 첨부파일 추가
-        existingAttachments.add(attachment.toJson());
-        
-        // 저장
-        await prefs.setString(localAttachmentsKey, jsonEncode(existingAttachments));
-        debugPrint('첨부파일 정보 로컬 저장 완료');
-      } catch (e) {
-        debugPrint('첨부파일 로컬 저장 실패: $e');
-      }
-      
-      // 서버에 업로드 시도
-      bool isSuccess = false;
-      
-      // 모든 가능한 첨부파일 엔드포인트 시도
-      final endpoints = [
-        '/solution-development/attachments',
-        '/db/attachments', 
-        '/memory/attachments'
-      ];
-      
-      for (final endpoint in endpoints) {
-        try {
-          // 매번 새로운 Dio 및 FormData 인스턴스 생성
-          final dio = Dio();
-          final formData = FormData();
-          
-          // 파일 추가
-          formData.files.add(MapEntry(
-            'file',
-            MultipartFile.fromBytes(
-              fileBytes,
-              filename: fileName,
-              contentType: MediaType.parse(mimeType),
-            ),
-          ));
-          
-          // 관계 정보 추가
-          formData.fields.add(MapEntry('relatedEntityId', entityId));
-          formData.fields.add(MapEntry('relatedEntityType', entityType));
-          
-          debugPrint('첨부파일 업로드 시도: $_baseUrl$endpoint');
-          final response = await dio.post(
-            '$_baseUrl$endpoint',
-            data: formData,
-            options: Options(
-              contentType: 'multipart/form-data',
-              receiveTimeout: const Duration(seconds: 30),
-              sendTimeout: const Duration(seconds: 30),
-            ),
-          );
-          
-          debugPrint('$endpoint 업로드 응답 상태: ${response.statusCode}');
-          
-          if (response.statusCode == 200 || response.statusCode == 201) {
-            isSuccess = true;
-            debugPrint('$endpoint 첨부파일 업로드 성공');
-            
-            // 서버 응답 ID가 있으면 로컬 ID 업데이트
-            if (response.data is Map && response.data['_id'] != null) {
-              final serverId = response.data['_id'];
-              debugPrint('서버 ID 할당: $serverId');
-              
-              // 로컬 저장소의 ID도 업데이트
-              try {
-                final prefs = await SharedPreferences.getInstance();
-                final localAttachmentsKey = 'attachments_${entityId}_${entityType}';
-                final jsonString = prefs.getString(localAttachmentsKey);
-                
-                if (jsonString != null) {
-                  final List<dynamic> decoded = jsonDecode(jsonString);
-                  for (var i = 0; i < decoded.length; i++) {
-                    if (decoded[i]['id'] == id) {
-                      decoded[i]['id'] = serverId;
-                      break;
-                    }
-                  }
-                  
-                  await prefs.setString(localAttachmentsKey, jsonEncode(decoded));
-                  debugPrint('첨부파일 ID 업데이트 완료: $id → $serverId');
-                }
-              } catch (e) {
-                debugPrint('첨부파일 ID 업데이트 실패: $e');
-              }
-            }
-            
-            break; // 성공하면 중단
-          }
-        } catch (e) {
-          debugPrint('$endpoint 첨부파일 업로드 실패: $e');
-        }
-      }
-      
-      if (isSuccess) {
-        logToServer('INFO', '첨부파일 업로드 성공', 
-            data: {'fileName': fileName, 'entityId': entityId});
+        final savedAttachment = AttachmentModel.fromJson(data);
+        debugPrint('첨부파일 업로드 성공: ${savedAttachment.originalFilename}, ID: ${savedAttachment.id}');
+        logToServer('INFO', '첨부파일 업로드 성공 (신규 API)', data: {'fileName': fileName, 'attachmentId': savedAttachment.id});
+        return savedAttachment;
       } else {
-        logToServer('WARNING', '첨부파일 서버 업로드 실패, 로컬 저장만 성공', 
-            data: {'fileName': fileName, 'localId': id});
+        _logError('첨부파일 업로드', '상태 코드: ${response.statusCode}', '$_baseUrl/attachments', response.data);
+        return null;
       }
-      
-      debugPrint('첨부파일 업로드 결과: ${isSuccess ? '서버 저장 성공' : '로컬만 저장'}');
-      return attachment;
     } catch (e) {
-      final errorMsg = '첨부파일 업로드 처리 중 예외 발생: $e';
-      debugPrint(errorMsg);
-      logToServer('ERROR', errorMsg, 
-          data: {'fileName': fileName, 'entityId': entityId});
+      String errorMessage = '첨부파일 업로드 중 오류 발생: $e';
+      if (e is DioException && e.response != null) {
+        errorMessage += '\n서버 응답: ${e.response?.statusCode} - ${e.response?.data}';
+      }
+      debugPrint(errorMessage);
+      logToServer('ERROR', errorMessage, data: {'fileName': fileName, 'entityId': entityId});
       return null;
     }
   }
-  
-  // 첨부파일 업로드 (파일 경로)
+
+  // 첨부파일 업로드 (파일 경로) - Uses the new uploadFile method
   Future<AttachmentModel?> uploadFileFromPath({
     required String filePath,
     required String fileName,
     required String entityId,
     required String entityType,
   }) async {
+    if (kIsWeb) {
+      logToServer('ERROR', 'Web does not support file path upload', data: {'fileName': fileName});
+      throw UnsupportedError('웹 환경에서는 파일 경로로 업로드가 지원되지 않습니다.');
+    }
     try {
-      if (kIsWeb) {
-        throw UnsupportedError('웹 환경에서는 파일 경로로 업로드가 지원되지 않습니다.');
-      }
-      
       final file = File(filePath);
       final bytes = await file.readAsBytes();
-      
       return uploadFile(
         fileBytes: bytes,
         fileName: fileName,
-        entityId: entityId, 
+        entityId: entityId,
         entityType: entityType,
       );
     } catch (e) {
@@ -2441,469 +2154,207 @@ class ApiService {
       return null;
     }
   }
-  
-  // 첨부파일 다운로드
-  Future<bool> downloadAttachment(String attachmentId) async {
+
+  // 첨부파일 다운로드 (New endpoint)
+  Future<bool> downloadAttachment(String attachmentId, {String? suggestedFileName}) async {
     try {
       debugPrint('=== 첨부파일 다운로드 시작 ===');
       debugPrint('첨부파일ID: $attachmentId');
       
-      // 로컬 ID 또는 임시 ID 확인 - 이 경우 다운로드 불가능함을 알림
-      if (attachmentId.startsWith('local_') || attachmentId.startsWith('temp_')) {
-        debugPrint('로컬/임시 첨부파일은 다운로드할 수 없음: $attachmentId');
-        logToServer('WARN', '로컬/임시 첨부파일 다운로드 시도', 
-            data: {'attachmentId': attachmentId});
-        return false;
-      }
+      final uri = Uri.parse('$_baseUrl/api/attachments/download/$attachmentId');
       
-      // 시도할 엔드포인트 목록
-      final endpoints = [
-        '$_baseUrl/memory/attachments/$attachmentId/download',
-        '$_baseUrl/solution-development/attachments/$attachmentId/download',
-        '$_baseUrl/db/attachments/$attachmentId/download',
-        '$_baseUrl/attachments/$attachmentId/download' // 기본 엔드포인트도 시도
-      ];
-      
-      logToServer('INFO', '첨부파일 다운로드 시작', 
-          data: {'attachmentId': attachmentId, 'endpoints': endpoints});
-      
-      // 각 엔드포인트 순차적으로 시도
-      for (final endpoint in endpoints) {
+      try {
+        // GET 요청으로 파일 다운로드
+        final response = await http.get(
+          uri,
+          headers: {'Accept': '*/*'}, // 모든 응답 유형 허용
+        ).timeout(
+          const Duration(seconds: 120), // 대용량 파일 고려 타임아웃 증가
+          onTimeout: () => http.Response('Timeout', 408),
+        );
+
+        debugPrint('응답 상태: ${response.statusCode}');
+        
+        // 다운로드 응답 처리
+        final success = await _processDownloadResponse(
+          response, 
+          suggestedFileName: suggestedFileName,
+          entityType: 'attachment'
+        );
+        
+        return success;
+      } catch (httpError) {
+        debugPrint('첨부파일 다운로드 HTTP 요청 실패: $httpError');
+        
+        // 대체 엔드포인트 시도 (api/attachment/download)
         try {
-          debugPrint('다운로드 시도 URL: $endpoint');
-          final uri = Uri.parse(endpoint);
+          debugPrint('대체 엔드포인트로 다시 시도');
+          final uri2 = Uri.parse('$_baseUrl/api/attachment/download?id=$attachmentId');
           
-          // 타임아웃을 더 길게 설정하여 대용량 파일 다운로드 지원
           final response = await http.get(
-            uri,
+            uri2,
             headers: {'Accept': '*/*'},
           ).timeout(
-            const Duration(seconds: 30),
+            const Duration(seconds: 120),
             onTimeout: () => http.Response('Timeout', 408),
           );
           
-          debugPrint('응답 상태 코드: ${response.statusCode}');
+          debugPrint('대체 엔드포인트 응답 상태: ${response.statusCode}');
           
-          if (response.statusCode == 200) {
-            final success = await _processDownloadResponse(response);
-            debugPrint('다운로드 결과: ${success ? '성공' : '실패'}');
-            if (success) {
-              logToServer('INFO', '첨부파일 다운로드 성공', 
-                  data: {'attachmentId': attachmentId, 'endpoint': endpoint});
-              return true;
-            }
-          } else {
-            debugPrint('엔드포인트 $endpoint 다운로드 실패: ${response.statusCode}');
-            if (response.statusCode >= 400) {
-              debugPrint('응답 본문: ${response.body.length > 100 ? '${response.body.substring(0, 100)}...' : response.body}');
-            }
-            
-            logToServer('WARN', '첨부파일 다운로드 엔드포인트 실패', 
-                data: {'attachmentId': attachmentId, 'endpoint': endpoint, 'statusCode': response.statusCode});
-          }
-        } catch (e) {
-          final errorMsg = '엔드포인트 $endpoint 시도 중 오류: $e';
-          debugPrint(errorMsg);
-          logToServer('ERROR', '첨부파일 다운로드 엔드포인트 오류', 
-              data: {'attachmentId': attachmentId, 'endpoint': endpoint, 'error': e.toString()});
+          final success = await _processDownloadResponse(
+            response, 
+            suggestedFileName: suggestedFileName,
+            entityType: 'attachment'
+          );
+          
+          return success;
+        } catch (altError) {
+          debugPrint('대체 엔드포인트 요청도 실패: $altError');
+          throw Exception('모든 다운로드 시도 실패: $httpError, $altError');
         }
       }
-      
-      // 웹 환경에서 직접 다운로드 시도 (모든 서버 엔드포인트 실패 시)
-      if (kIsWeb) {
-        try {
-          debugPrint('웹 환경에서 직접 다운로드 시도');
-          // 기본 엔드포인트로 시도
-          final endpoint = '$_baseUrl/memory/attachments/$attachmentId/download';
-          
-          // 현재 페이지에서 새 창으로 다운로드 링크 열기
-          html.window.open(endpoint, '_blank');
-          debugPrint('브라우저 다운로드 URL 열기 완료');
-          logToServer('INFO', '웹 브라우저 다운로드 시도', 
-              data: {'attachmentId': attachmentId, 'endpoint': endpoint});
-          return true;
-        } catch (e) {
-          final errorMsg = '브라우저 다운로드 시도 실패: $e';
-          _logError('브라우저 다운로드 시도', e);
-          logToServer('ERROR', errorMsg, 
-              data: {'attachmentId': attachmentId});
-        }
-      }
-      
-      debugPrint('모든 다운로드 시도 실패');
-      logToServer('ERROR', '첨부파일 다운로드 모든 시도 실패', 
-          data: {'attachmentId': attachmentId});
-      return false;
     } catch (e) {
-      final errorMsg = '첨부파일 다운로드 처리 중 예외 발생: $e';
       _logError('첨부파일 다운로드', e);
-      debugPrint(errorMsg);
-      logToServer('ERROR', errorMsg, 
-          data: {'attachmentId': attachmentId});
       return false;
     }
   }
-  
-  // 다운로드 응답 처리 헬퍼 메서드
-  Future<bool> _processDownloadResponse(http.Response response) async {
+
+  // 다운로드 응답 처리 (바이너리 데이터를 파일로 저장)
+  Future<bool> _processDownloadResponse(http.Response response, {String? suggestedFileName, String entityType = ''}) async {
     try {
-      // 헤더 정보 로깅
-      debugPrint('응답 헤더: ${response.headers}');
-      
-      // Content-Type 확인
-      final contentType = response.headers['content-type'];
-      debugPrint('콘텐츠 타입: $contentType');
-      
-      // Content-Disposition 헤더에서 파일 이름 추출
-      final contentDisposition = response.headers['content-disposition'];
-      String fileName = 'download';
-      debugPrint('Content-Disposition: $contentDisposition');
-      
-      if (contentDisposition != null) {
-        // filename= 또는 filename*= 패턴 모두 검색
-        final RegExp filenameRegex = RegExp(r'filename[^;=\n]*=([\"]?)([^\";]*)\1');
-        final matches = filenameRegex.firstMatch(contentDisposition);
-        
-        if (matches != null && matches.groupCount >= 2) {
-          fileName = matches.group(2)!;
-          // URL 인코딩된 이름 디코딩
-          try {
-            fileName = Uri.decodeComponent(fileName);
-          } catch (_) {
-            // 디코딩 실패 시 원래 이름 유지
-          }
-        } else if (contentDisposition.contains('filename=')) {
-          final parts = contentDisposition.split('filename=');
-          if (parts.length > 1) {
-            fileName = parts[1];
-            // 따옴표 제거
-            if (fileName.startsWith('"') && fileName.endsWith('"')) {
-              fileName = fileName.substring(1, fileName.length - 1);
-            }
-            // 세미콜론이나 다른 헤더 파라미터 제거
-            if (fileName.contains(';')) {
-              fileName = fileName.split(';')[0];
-            }
-          }
-        }
-      }
-      
-      // 파일 데이터
-      final bytes = response.bodyBytes;
-      
-      if (bytes.isEmpty) {
-        debugPrint('다운로드된 파일의 크기가 0입니다.');
+      if (response.statusCode != 200) {
+        debugPrint('다운로드 실패: HTTP ${response.statusCode}');
         return false;
       }
+
+      final contentTypeHeader = response.headers['content-type'] ?? 'application/octet-stream';
+      final contentLength = response.contentLength ?? response.bodyBytes.length;
       
-      // 파일 확장자 및 MIME 타입 결정
-      String ext = '';
-      if (fileName.contains('.')) {
-        ext = fileName.split('.').last.toLowerCase();
-      } else if (contentType != null) {
-        // 콘텐츠 타입에서 확장자 추론 시도
-        if (contentType.contains('pdf')) {
-          ext = 'pdf';
-        } else if (contentType.contains('jpeg') || contentType.contains('jpg')) {
-          ext = 'jpg';
-        } else if (contentType.contains('png')) {
-          ext = 'png';
-        } else if (contentType.contains('text/plain')) {
-          ext = 'txt';
-        } else if (contentType.contains('application/json')) {
-          ext = 'json';
-        }
-        
-        // 확장자가 없으면 파일 이름에 추가
-        if (ext.isNotEmpty && !fileName.endsWith(ext)) {
-          fileName = '$fileName.$ext';
-        }
+      // 헤더에서 파일명 추출 (한글 파일명 처리 개선)
+      String fileName = _getFilenameFromHeaders(response.headers) ?? 
+          suggestedFileName ?? 
+          'downloaded_file_${DateTime.now().millisecondsSinceEpoch}';
+          
+      // 확장자가 없는 경우 콘텐츠 타입을 기반으로 적절한 확장자 추가
+      if (!fileName.contains('.')) {
+        final extension = _getExtensionFromMimeType(contentTypeHeader);
+        fileName = '$fileName.$extension';
       }
       
-      final mimeTypeStr = contentType ?? _getMimeType(fileName);
-      debugPrint('다운로드할 파일: $fileName, 크기: ${bytes.length} 바이트, MIME: $mimeTypeStr');
+      // MIME 타입 확인
+      final mimeType = _getMimeType(fileName);
       
-      // 파일 저장 처리 (웹 또는 네이티브)
+      debugPrint('다운로드: $fileName ($mimeType, ${contentLength / 1024} KB)');
+      
+      // 웹 환경에서는 FileSaver 사용
       if (kIsWeb) {
-        // 웹에서는 FileSaver 패키지 사용
-        debugPrint('웹 환경: FileSaver를 사용하여 다운로드 시작');
-        try {
-          // MIME 타입에 따라 MimeType 열거형 결정
-          MimeType mimeType = MimeType.other;
-          if (mimeTypeStr.startsWith('image/')) {
-            if (mimeTypeStr.contains('png')) mimeType = MimeType.png;
-            else if (mimeTypeStr.contains('jpg') || mimeTypeStr.contains('jpeg')) mimeType = MimeType.other; // jpg 사용 불가
-            else mimeType = MimeType.other;
-          } else if (mimeTypeStr.contains('pdf')) {
-            mimeType = MimeType.pdf;  // PDF 파일 타입 설정
-          } else if (mimeTypeStr.contains('text/')) {
-            mimeType = MimeType.text;
-          }
-          
-          await FileSaver.instance.saveFile(
-            name: fileName,
-            bytes: Uint8List.fromList(bytes),
-            ext: ext,
-            mimeType: mimeType,
-          );
-          debugPrint('웹 환경: 파일 다운로드 완료');
-          return true;
-        } catch (e) {
-          debugPrint('웹 환경 FileSaver 저장 실패: $e');
-          
-          // html 방식으로 폴백 시도
-          try {
-            final blob = html.Blob([bytes], mimeTypeStr);
-            final url = html.Url.createObjectUrlFromBlob(blob);
-            final anchor = html.AnchorElement(href: url)
-              ..setAttribute('download', fileName)
-              ..style.display = 'none'
-              ..click();
-            html.Url.revokeObjectUrl(url);
-            debugPrint('웹 환경: html 방식으로 다운로드 완료');
-            return true;
-          } catch (e2) {
-            _logError('html 방식 다운로드 시도', e2);
-            return false;
-          }
-        }
+        await FileSaver.instance.saveFile(
+          name: fileName,
+          bytes: response.bodyBytes,
+          ext: fileName.split('.').last,
+          mimeType: MimeType.other,
+        );
+        debugPrint('웹 환경에서 파일 저장 완료: $fileName');
+        return true;
       } else {
-        // 네이티브 환경에서의 다운로드 처리
-        debugPrint('네이티브 환경: 파일 다운로드 시작');
-        
-        try {
-          // Windows 환경에서는 다운로드 폴더에 직접 저장 시도
-          if (Platform.isWindows) {
-            try {
-              // 사용자에게 저장 위치 선택 요청 (기본값 다운로드 폴더)
-              final directory = await getDownloadsDirectory();
-              String initialDirectory = directory?.path ?? '';
-              
-              // 파일 저장 대화상자 표시
-              final result = await FilePicker.platform.saveFile(
-                dialogTitle: '다운로드한 파일 저장',
-                fileName: fileName,
-                initialDirectory: initialDirectory,
-              );
-              
-              if (result != null) {
-                final file = File(result);
-                // 디렉토리가 존재하는지 확인
-                final dir = file.parent;
-                if (!await dir.exists()) {
-                  await dir.create(recursive: true);
-                }
-                try {
-                  await file.writeAsBytes(bytes);
-                  final savedPath = file.path;
-                  // 저장된 파일이 존재하는지 확인
-                  final savedFile = File(savedPath);
-                  if (await savedFile.exists()) {
-                    debugPrint('Windows 환경: 사용자 선택 경로에 파일 저장 완료: $savedPath');
-                    // 사용자에게 저장 경로 안내를 위해 로깅
-                    logToServer('INFO', '파일 다운로드 완료', 
-                        data: {'path': savedPath, 'fileName': fileName});
-                    return true;
-                  } else {
-                    debugPrint('파일 저장 실패: 파일이 존재하지 않음');
-                    return false;
-                  }
-                } catch (e) {
-                  debugPrint('파일 쓰기 오류: $e');
-                  // 다른 방법으로 시도
-                  final tempPath = '${dir.path}${Platform.pathSeparator}temp_${DateTime.now().millisecondsSinceEpoch}_$fileName';
-                  final tempFile = File(tempPath);
-                  try {
-                    await tempFile.writeAsBytes(bytes);
-                    debugPrint('임시 파일에 저장 완료: ${tempFile.path}');
-                    return true;
-                  } catch (e2) {
-                    debugPrint('임시 파일 저장 실패: $e2');
-                    return false;
-                  }
-                }
-              } else {
-                debugPrint('사용자가 파일 저장을 취소했습니다.');
-                return false;
-              }
-            } catch (e) {
-              debugPrint('Windows 파일 저장 대화상자 실패: $e');
-              // 다음 방법으로 진행
-            }
-          }
-          
-          // FileSaver 패키지로 시도
-          try {
-            // MIME 타입에 따라 MimeType 열거형 결정
-            MimeType mimeType = MimeType.other;
-            
-            // MIME 타입 결정 로직 개선
-            if (mimeTypeStr.startsWith('image/')) {
-              if (mimeTypeStr.contains('png')) {
-                mimeType = MimeType.png;
-              } else if (mimeTypeStr.contains('jpg') || mimeTypeStr.contains('jpeg')) {
-                // jpg는 사용 불가하므로 other로 처리하고 로그 추가
-                mimeType = MimeType.other;
-                debugPrint('JPG 이미지는 MimeType.jpg가 지원되지 않아 MimeType.other로 처리됩니다.');
-              } else if (mimeTypeStr.contains('gif')) {
-                mimeType = MimeType.other; // gif도 specific 타입이 없음
-              } else {
-                mimeType = MimeType.other;
-              }
-            } else if (mimeTypeStr.contains('pdf')) {
-              mimeType = MimeType.pdf;
-            } else if (mimeTypeStr.contains('text/')) {
-              mimeType = MimeType.text;
-            } else if (mimeTypeStr.contains('excel') || mimeTypeStr.contains('spreadsheet') || 
-                       mimeTypeStr.contains('xls') || ext == 'xlsx' || ext == 'xls') {
-              mimeType = MimeType.microsoftExcel;
-            } else if (mimeTypeStr.contains('word') || mimeTypeStr.contains('document') || 
-                       ext == 'docx' || ext == 'doc') {
-              mimeType = MimeType.other; // word 전용 타입 없음
-            }
-            
-            debugPrint('네이티브 FileSaver - MIME 타입 결정: $mimeTypeStr → MimeType.$mimeType');
-            
-            await FileSaver.instance.saveFile(
-              name: fileName,
-              bytes: Uint8List.fromList(bytes),
-              ext: ext,
-              mimeType: mimeType,
-            );
-            debugPrint('네이티브 환경: FileSaver로 다운로드 완료');
-            return true;
-          } catch (e) {
-            debugPrint('네이티브 FileSaver 저장 실패: $e');
-            // 다음 방법으로 진행
-          }
-          
-          // 일반적인 방법으로 시도 - 사용자에게 저장 위치 선택 요청
-          final result = await FilePicker.platform.getDirectoryPath(
-            dialogTitle: '파일을 저장할 폴더 선택',
-          );
-          if (result != null) {
-            final file = File('$result${Platform.pathSeparator}$fileName');
-            // 폴더가 존재하는지 확인
-            final directory = Directory(result);
-            if (!await directory.exists()) {
-              await directory.create(recursive: true);
-            }
-            try {
-              await file.writeAsBytes(bytes);
-              debugPrint('네이티브 환경: 사용자 선택 경로에 파일 저장 완료: ${file.path}');
-              return true;
-            } catch (e) {
-              debugPrint('파일 쓰기 오류: $e');
-              
-              // 임시 파일 이름으로 다시 시도
-              final tempPath = '${directory.path}${Platform.pathSeparator}download_${DateTime.now().millisecondsSinceEpoch}_$fileName';
-              final tempFile = File(tempPath);
-              try {
-                await tempFile.writeAsBytes(bytes);
-                debugPrint('임시 파일에 저장 완료: ${tempFile.path}');
-                return true;
-              } catch (e2) {
-                debugPrint('임시 파일 저장 실패: $e2');
-                return false;
-              }
-            }
-          } else {
-            debugPrint('사용자가 디렉토리 선택을 취소했습니다.');
-            return false;
-          }
-        } catch (e) {
-          _logError('네이티브 파일 저장', e);
+        // 네이티브 환경에서는 파일로 저장
+        final result = await FilePicker.platform.getDirectoryPath();
+        if (result != null) {
+          final path = '$result/$fileName';
+          final file = File(path);
+          await file.writeAsBytes(response.bodyBytes);
+          debugPrint('네이티브 환경에서 파일 저장 완료: $path');
+          return true;
+        } else {
+          debugPrint('파일 저장 위치 선택 취소됨');
           return false;
         }
       }
     } catch (e) {
-      _logError('다운로드 응답 처리', e);
+      _logError('다운로드 처리', e);
       return false;
     }
   }
 
-  // MIME 타입 추출 헬퍼 메서드
+  // MIME 타입 추출 헬퍼 메서드 (No changes needed)
   String _getMimeType(String fileName) {
-    // mime 패키지를 사용하여 MIME 타입 확인
-    String? mimeType = lookupMimeType(fileName);
+    final extension = _getExtensionFromFilename(fileName);
     
-    // 확장자로 MIME 타입 추측 (패키지로 확인 안 되는 경우)
-    if (mimeType == null || mimeType == 'application/octet-stream') {
-      final ext = fileName.split('.').last.toLowerCase();
-      
-      // 확장자 기반 MIME 타입 매핑
-      final Map<String, String> extToMime = {
-        'txt': 'text/plain',
-        'pdf': 'application/pdf',
-        'doc': 'application/msword',
-        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'xls': 'application/vnd.ms-excel',
-        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'ppt': 'application/vnd.ms-powerpoint',
-        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'png': 'image/png',
-        'gif': 'image/gif',
-        'bmp': 'image/bmp',
-        'mp3': 'audio/mpeg',
-        'wav': 'audio/wav',
-        'mp4': 'video/mp4',
-        'avi': 'video/x-msvideo',
-        'mov': 'video/quicktime',
-        'zip': 'application/zip',
-        'rar': 'application/x-rar-compressed',
-        'tar': 'application/x-tar',
-        'gz': 'application/gzip',
-        'csv': 'text/csv',
-        'json': 'application/json',
-        'xml': 'application/xml',
-        'html': 'text/html',
-        'htm': 'text/html',
-      };
-      
-      mimeType = extToMime[ext] ?? 'application/octet-stream';
-      debugPrint('확장자 "$ext"에서 MIME 타입을 추측: $mimeType');
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+      case 'docx':
+        return 'application/msword';
+      case 'xls':
+      case 'xlsx':
+        return 'application/vnd.ms-excel';
+      case 'ppt':
+      case 'pptx':
+        return 'application/vnd.ms-powerpoint';
+      case 'txt':
+        return 'text/plain';
+      case 'zip':
+        return 'application/zip';
+      default:
+        return 'application/octet-stream';
     }
-    
-    return mimeType;
   }
 
-  // 데이터베이스 직접 접근 유틸리티 메서드 (서버에 DB 직접 요청)
-  Future<bool> saveToDatabase(String collection, Map<String, dynamic> data, {String? id}) async {
+  // 파일명에서 확장자 추출
+  String _getExtensionFromFilename(String filename) {
+    final lastDotIndex = filename.lastIndexOf('.');
+    if (lastDotIndex != -1 && lastDotIndex < filename.length - 1) {
+      return filename.substring(lastDotIndex + 1).toLowerCase();
+    }
+    return 'bin'; // 기본 확장자
+  }
+
+  // MIME 타입에서 확장자 추출
+  String _getExtensionFromMimeType(String mimeType) {
+    final mime = mimeType.toLowerCase();
+    
+    if (mime.contains('jpeg') || mime.contains('jpg')) return 'jpg';
+    if (mime.contains('png')) return 'png';
+    if (mime.contains('gif')) return 'gif';
+    if (mime.contains('pdf')) return 'pdf';
+    if (mime.contains('msword') || mime.contains('doc')) return 'doc';
+    if (mime.contains('excel') || mime.contains('xls')) return 'xls';
+    if (mime.contains('powerpoint') || mime.contains('ppt')) return 'ppt';
+    if (mime.contains('text/plain')) return 'txt';
+    if (mime.contains('zip')) return 'zip';
+    
+    return 'bin'; // 기본 확장자
+  }
+
+  // 첨부파일 삭제 (New endpoint)
+  Future<bool> deleteAttachment(String attachmentId) async {
     try {
-      debugPrint('=== 데이터베이스 직접 저장 시도 ===');
-      debugPrint('컬렉션: $collection, ID: ${id ?? "새 문서"}');
-      
-      final endpoint = id == null 
-        ? '$_baseUrl/db/$collection' 
-        : '$_baseUrl/db/$collection/$id';
-      
-      final headers = {
-        'Content-Type': 'application/json', 
-        'X-DB-Action': id == null ? 'insert' : 'update'
-      };
-      
-      debugPrint('요청 URL: $endpoint');
-      debugPrint('요청 데이터 (요약): ${_summarizeData(data)}');
-      
-      final response = await http.post(
-        Uri.parse(endpoint),
-        headers: headers,
-        body: jsonEncode(data),
-      ).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => http.Response('Timeout', 408),
-      );
-      
-      debugPrint('응답 상태: ${response.statusCode}');
-      if (response.statusCode >= 400) {
-        debugPrint('응답 본문: ${response.body}');
+      debugPrint('=== 첨부파일 삭제 시작 (신규 API) ===');
+      debugPrint('첨부파일ID: $attachmentId');
+
+      final uri = Uri.parse('$_baseUrl/attachments/$attachmentId');
+      final response = await _safeDelete(uri);
+
+      debugPrint('첨부파일 삭제 응답 상태: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        debugPrint('첨부파일 삭제 성공: ID $attachmentId');
+        logToServer('INFO', 'Attachment deleted successfully', data: {'attachmentId': attachmentId});
+        return true;
+      } else {
+        _logError('첨부파일 삭제', '상태 코드: ${response.statusCode}', uri.toString(), response.body);
+        return false;
       }
-      
-      return response.statusCode == 200 || response.statusCode == 201;
     } catch (e) {
-      debugPrint('데이터베이스 저장 실패: $e');
+      _logError('첨부파일 삭제', e);
       return false;
     }
   }
@@ -2959,66 +2410,28 @@ class ApiService {
   
   // 디버깅용 데이터 요약
   String _summarizeData(Map<String, dynamic> data) {
-    final buffer = StringBuffer('{');
-    int count = 0;
-    
-    for (final entry in data.entries) {
-      if (count > 0) buffer.write(', ');
-      
-      // 객체 값은 요약
-      if (entry.value is Map) {
-        buffer.write('${entry.key}: {...}');
-      } 
-      // 배열 값은 길이만 표시
-      else if (entry.value is List) {
-        buffer.write('${entry.key}: [${(entry.value as List).length} items]');
-      } 
-      // 문자열이 너무 길면 자르기
-      else if (entry.value is String && (entry.value as String).length > 50) {
-        buffer.write('${entry.key}: "${(entry.value as String).substring(0, 47)}..."');
-      } 
-      // 그 외 값은 그대로 표시
-      else {
-        buffer.write('${entry.key}: ${entry.value}');
-      }
-      
-      count++;
-      if (count >= 5) {
-        buffer.write(', ...');
-        break;
-      }
+    try {
+      return data.entries.map((e) => '${e.key}: ${e.value.toString().substring(0, min(e.value.toString().length, 50))}').join(', ');
+    } catch (_) {
+      return 'Error summarizing data';
     }
-    
-    buffer.write('}');
-    return buffer.toString();
   }
 
   // DB 로깅 유틸리티
   Future<void> logToServer(String level, String message, {Map<String, dynamic>? data}) async {
-    try {
-      final logData = {
-        'timestamp': DateTime.now().toIso8601String(),
-        'level': level,
-        'message': message,
-        'data': data,
-        'client': 'flutter_app',
-      };
-      
-      // 로그 저장 요청 (비동기로 처리하고 결과를 기다리지 않음)
-      http.post(
-        Uri.parse('$_baseUrl/logs'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(logData),
-      ).then((response) {
-        if (response.statusCode != 200 && response.statusCode != 201) {
-          debugPrint('로그 저장 실패: ${response.statusCode}');
-        }
-      }).catchError((e) {
-        debugPrint('로그 저장 예외: $e');
-      });
-    } catch (e) {
-      debugPrint('로그 생성 실패: $e');
-    }
+    // Implement actual logging API call if backend supports it
+    // print('[SERVER LOG - $level] $message ${data != null ? jsonEncode(data) : ''}');
+     try {
+       // Example: Replace with your actual logging endpoint and format
+       // await http.post(Uri.parse('$_baseUrl/logs'), body: jsonEncode({
+       //   'level': level,
+       //   'message': message,
+       //   'timestamp': DateTime.now().toIso8601String(),
+       //   'data': data
+       // }));
+     } catch (e) {
+       // print('Failed to send log to server: $e');
+     }
   }
 
   // 로컬 저장소에 데이터 저장 (SharedPreferences)
@@ -3033,57 +2446,77 @@ class ApiService {
     }
   }
 
-  // 첨부파일 삭제
-  Future<bool> deleteAttachment(String attachmentId) async {
-    try {
-      debugPrint('=== 첨부파일 삭제 시작 ===');
-      debugPrint('첨부파일ID: $attachmentId');
+  // HTTP 응답에서 Content-Disposition 헤더를 파싱하여 파일명 추출
+  String? _getFilenameFromHeaders(Map<String, String> headers) {
+    final contentDisposition = headers['content-disposition'] ?? headers['Content-Disposition'];
+    if (contentDisposition == null) return null;
+    
+    final regExp = RegExp(r'filename[^;=\n]*=([\"]?)([^\";]*)\1');
+    final matches = regExp.firstMatch(contentDisposition);
+    
+    if (matches != null && matches.groupCount >= 2) {
+      String filename = matches.group(2) ?? '';
       
-      // 시도할 엔드포인트 목록
-      final endpoints = [
-        '$_baseUrl/solution-development/attachments/$attachmentId',
-        '$_baseUrl/db/attachments/$attachmentId',
-        '$_baseUrl/memory/attachments/$attachmentId'
-      ];
-      
-      bool isSuccess = false;
-      String successEndpoint = '';
-      
-      // 각 엔드포인트 순차적으로 시도
-      for (final endpoint in endpoints) {
-        try {
-          debugPrint('삭제 시도 URL: $endpoint');
-          
-          final response = await http.delete(
-            Uri.parse(endpoint),
-            headers: {'Accept': '*/*'},
-          ).timeout(
-            const Duration(seconds: 10),
-            onTimeout: () => http.Response('Timeout', 408),
-          );
-          
-          debugPrint('응답 상태 코드: ${response.statusCode}');
-          
-          if (response.statusCode == 200 || response.statusCode == 204) {
-            isSuccess = true;
-            successEndpoint = endpoint;
-            debugPrint('첨부파일 삭제 성공');
-            break;
-          } else {
-            debugPrint('엔드포인트 $endpoint 삭제 실패: ${response.statusCode}');
+      // URL 인코딩된 한글 파일명 디코딩
+      try {
+        if (filename.contains('%')) {
+          filename = Uri.decodeComponent(filename);
+          // 이중 인코딩된 경우 한 번 더 디코딩
+          if (filename.contains('%')) {
+            filename = Uri.decodeComponent(filename);
           }
-        } catch (e) {
-          debugPrint('엔드포인트 $endpoint 시도 중 오류: $e');
         }
+        // 파일명에 UTF-8 이스케이프 시퀀스가 포함된 경우 처리
+        if (filename.contains(r'\u')) {
+          filename = _decodeUtf8Escapes(filename);
+        }
+      } catch (e) {
+        print('파일명 디코딩 오류: $e, 원본: $filename');
       }
       
-      // 로컬 저장소에서도 해당 첨부파일 정보 삭제 시도
-      // 이 부분은 파일이 속한 엔티티 정보를 모르므로 성공적으로 작동하지 않을 수 있음
+      return filename;
+    }
+    
+    return null;
+  }
+  
+  // UTF-8 이스케이프 시퀀스 디코딩 (\uXXXX 형식)
+  String _decodeUtf8Escapes(String input) {
+    final pattern = RegExp(r'\\u([0-9a-fA-F]{4})');
+    return input.replaceAllMapped(pattern, (match) {
+      final hexCode = match.group(1)!;
+      final codePoint = int.parse(hexCode, radix: 16);
+      return String.fromCharCode(codePoint);
+    });
+  }
+
+  // 단일 첨부파일 조회
+  Future<AttachmentModel?> getAttachment(String attachmentId) async {
+    try {
+      debugPrint('첨부파일 조회 시도: $attachmentId');
       
-      return isSuccess;
+      final uri = Uri.parse('$_baseUrl/attachments/$attachmentId');
+      final response = await _safeGet(uri);
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        
+        // _id 필드를 id로 매핑
+        if (data['_id'] != null && data['id'] == null) {
+          data['id'] = data['_id'];
+        }
+        
+        return AttachmentModel.fromJson(data);
+      } else if (response.statusCode == 404) {
+        debugPrint('첨부파일을 찾을 수 없음: $attachmentId');
+        return null;
+      } else {
+        _logError('첨부파일 조회', '상태 코드: ${response.statusCode}', uri.toString(), response.body);
+        return null;
+      }
     } catch (e) {
-      debugPrint('첨부파일 삭제 처리 중 예외 발생: $e');
-      return false;
+      _logError('첨부파일 조회', e);
+      return null;
     }
   }
 } 

@@ -10,18 +10,20 @@ const solutionDevelopmentRoutes = require('./routes/solutionDevelopmentRoutes');
 const hardwareRoutes = require('./routes/hardwareRoutes');
 const softwareRoutes = require('./routes/softwareRoutes');
 const equipmentConnectionRoutes = require('./routes/equipmentConnectionRoutes');
+const attachmentRoutes = require('./routes/attachmentRoutes');
 const { getSampleVocData, getSampleSystemUpdateData, getSampleHardwareData, getSampleSoftwareData, getSampleEquipmentConnectionData } = require('./models/sampleData');
 const Voc = require('./models/vocModel');
 const SystemUpdate = require('./models/systemUpdateModel');
 const Hardware = require('./models/hardwareModel');
 const Software = require('./models/softwareModel');
 const EquipmentConnection = require('./models/equipmentConnectionModel');
+const Attachment = require('./models/attachmentModel');
 
 // 환경 변수 로드
 dotenv.config();
 
 // 포트 설정
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
 // Express 앱 초기화
 const app = express();
@@ -32,6 +34,7 @@ connectDB();
 // 미들웨어
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 메모리 저장소 (MongoDB 연결 실패 시 사용)
 const memoryDB = {
@@ -39,7 +42,8 @@ const memoryDB = {
   systemUpdates: [],
   hardware: [],
   software: [],
-  equipmentConnections: []
+  equipmentConnections: [],
+  // attachments: []
 };
 
 // API 라우트
@@ -47,9 +51,10 @@ app.use('/api/voc', vocRoutes);
 app.use('/api/system-updates', systemUpdateRoutes);
 app.use('/api/solution-development', solutionDevelopmentRoutes);
 app.use('/api/hardware', hardwareRoutes);
-app.use('/api/hardware-assets', hardwareRoutes); // 추가 엔드포인트 (동일한 라우터 사용)
-app.use('/api/software', softwareRoutes); // 소프트웨어 라우트 추가
-app.use('/api/equipment-connections', equipmentConnectionRoutes); // 설비 연동관리 라우트 추가
+app.use('/api/hardware-assets', hardwareRoutes);
+app.use('/api/software', softwareRoutes);
+app.use('/api/equipment-connections', equipmentConnectionRoutes);
+app.use('/api/attachments', attachmentRoutes);
 
 // 메모리 백업 API 라우트 (MongoDB 연결 실패 시 사용)
 // 솔루션 개발 데이터 조회
@@ -765,6 +770,26 @@ const initMongoDB = async () => {
         }
       }
       
+      // attachments 컬렉션 존재 확인 및 생성
+      try {
+        const collections = await mongoose.connection.db.listCollections({ name: 'attachments' }).toArray();
+        if (collections.length === 0) {
+          console.log('attachments 컬렉션이 없습니다. 컬렉션을 생성합니다.');
+          // 컬렉션 생성 시 스키마 옵션(예: 인덱스) 적용 가능
+          await mongoose.connection.db.createCollection('attachments');
+          console.log('attachments 컬렉션 생성 완료.');
+          // 인덱스 생성 (예: relatedEntityId와 relatedEntityType 복합 인덱스)
+          await Attachment.createIndexes();
+          console.log('attachments 컬렉션 인덱스 생성 완료.');
+        } else {
+          console.log('attachments 컬렉션이 이미 존재합니다.');
+        }
+      } catch (attachError) {
+        console.error('Attachments 컬렉션 확인/생성/인덱싱 오류:', attachError.message);
+        // 심각한 오류일 경우 서버 시작 중단 고려
+        // process.exit(1);
+      }
+      
       console.log('MongoDB 초기화 완료!');
       break; // 초기화 성공 - 루프 종료
       
@@ -775,7 +800,7 @@ const initMongoDB = async () => {
       if (retryCount >= maxRetries) {
         console.log('최대 재시도 횟수 초과. 메모리 저장소로 전환합니다.');
         
-        // 메모리 저장소 초기화
+        // 메모리 저장소 초기화 (첨부파일 제외)
         if (memoryDB.vocs.length === 0) {
           memoryDB.vocs = getSampleVocData();
           console.log('메모리에 샘플 VOC 데이터가 추가되었습니다.');

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:pluto_grid_plus/pluto_grid_plus.dart';
+import 'package:pluto_grid_plus/pluto_grid_plus.dart' as pluto_grid_plus;
 import 'package:intl/intl.dart';
 import '../models/system_update_model.dart'; // 시스템 업데이트 모델 사용
 import '../services/api_service.dart';
@@ -31,7 +31,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
   final List<SystemUpdateModel> _selectedItems = [];
   final Set<String?> _selectedUpdateCodes = {}; // 선택된 코드 목록
   String? _selectedStatus;
-  PlutoGridStateManager? _gridStateManager;
+  pluto_grid_plus.PlutoGridStateManager? _gridStateManager;
 
   // 페이지네이션
   int _currentPage = 0;
@@ -61,6 +61,10 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
 
   // 개발사 리스트 추가
   final List<String> _developerList = ['건솔루션', '디비벨리', '하람정보', '코비젼'];
+
+  bool _filterByAttachment = false; // 첨부파일 필터링 상태 변수 추가
+  String _currentSortColumn = 'regDate'; // 현재 정렬 컬럼
+  bool _isAscending = false; // 정렬 방향 (false: 내림차순, true: 오름차순)
 
   @override
   void initState() {
@@ -101,8 +105,8 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
           _currentPage = 0;
         });
         
-        // 첨부파일 개수 로드
-        _loadAttachmentCounts();
+        // 첨부파일 개수 로드 - await 추가하여 비동기 작업 완료 기다림
+        await _loadAttachmentCounts();
       }
     } catch (e) {
       debugPrint('데이터 초기화 중 오류: $e');
@@ -182,42 +186,60 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
   }
 
   // 첨부파일 팝업 표시 함수
-  void _showAttachmentPopup(BuildContext context, SystemUpdateModel update) {
+  void _showAttachmentPopup(BuildContext context, SystemUpdateModel update) async {
     final String entityId;
-    final bool isUnsaved;
-    
-    if (update.id == null) {
-      // ID가 없는 경우(저장되지 않은 경우) no를 임시 ID로 사용
-      entityId = 'temp_${update.no}_${update.updateCode}';
-      isUnsaved = true;
+    bool isUnsaved = update.id == null;
+    SystemUpdateModel currentUpdate = update;
+
+    if (isUnsaved) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars(); // 기존 스낵바 제거
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('항목을 먼저 저장합니다...'), duration: Duration(seconds: 2)),
+        );
+      }
+      setState(() => _isLoading = true);
+
+      final savedItem = await _saveSpecificRow(currentUpdate);
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+
+      if (savedItem != null && savedItem.id != null) {
+        entityId = savedItem.id!;
+        currentUpdate = savedItem;
+        isUnsaved = false;
+        debugPrint('항목 저장 성공, 첨부파일 팝업 열기: ID ${entityId}');
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).clearSnackBars(); // 기존 스낵바 제거
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('항목 저장 실패. 첨부파일을 추가할 수 없습니다.'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
     } else {
       entityId = update.id!;
-      isUnsaved = false;
     }
     
-    if (isUnsaved) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('저장되지 않은 항목입니다. 첨부파일은 임시로 저장됩니다. 항목 저장 후 첨부파일이 영구적으로 저장됩니다.'),
-          duration: Duration(seconds: 5),
+    if (mounted) {
+      debugPrint('첨부파일 팝업 열기: 항목 ID ${entityId}, 코드 ${currentUpdate.updateCode}');
+      showDialog(
+        context: context,
+        builder: (context) => AttachmentPopup(
+          entityId: entityId,
+          entityType: 'system_update',
+          entityName: '솔루션 개발 [${currentUpdate.updateCode}]',
         ),
-      );
+      ).then((_) async {
+        debugPrint('첨부파일 팝업 닫힘, 첨부파일 개수 다시 로드');
+        // 첨부파일 개수 즉시 로드하고 UI 갱신
+        await _loadAttachmentCounts();
+        _refreshPlutoGrid();
+      });
     }
-    
-    debugPrint('첨부파일 팝업 열기: 항목 ID ${entityId}, 코드 ${update.updateCode}');
-    
-    showDialog(
-      context: context,
-      builder: (context) => AttachmentPopup(
-        entityId: entityId,
-        entityType: 'system_update',
-        entityName: '솔루션 개발 [${update.updateCode}]',
-      ),
-    ).then((_) {
-      // 팝업이 닫힌 후 첨부파일 개수 다시 로드
-      debugPrint('첨부파일 팝업 닫힘, 첨부파일 개수 다시 로드');
-      _loadAttachmentCounts();
-    });
   }
 
   // 샘플 데이터 생성 함수 추가
@@ -251,17 +273,142 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     return 'UPD$yearMonth$seq';
   }
 
-  List<SystemUpdateModel> _paginatedData() {
-    if (_updateData.isEmpty) return [];
-    final startIndex = _currentPage * _rowsPerPage;
-    final endIndex = (startIndex + _rowsPerPage > _updateData.length)
-        ? _updateData.length
-        : startIndex + _rowsPerPage;
-    if (startIndex >= _updateData.length) {
-      if (_currentPage > 0) { _currentPage = 0; return _paginatedData(); }
-      return [];
+  // 필터링 및 정렬 로직 적용된 데이터 반환
+  List<SystemUpdateModel> _getFilteredAndSortedData() {
+    List<SystemUpdateModel> filteredData = _updateData;
+
+    // 1. 검색어 필터링
+    final searchTerm = _searchController.text.toLowerCase();
+    if (searchTerm.isNotEmpty) {
+      filteredData = filteredData.where((item) {
+        return (item.updateCode?.toLowerCase().contains(searchTerm) ?? false) ||
+               (item.targetSystem.toLowerCase().contains(searchTerm)) ||
+               (item.developer?.toLowerCase().contains(searchTerm) ?? false) ||
+               (item.description.toLowerCase().contains(searchTerm)) ||
+               (item.updateType.toLowerCase().contains(searchTerm)) ||
+               (item.assignee.toLowerCase().contains(searchTerm)) ||
+               (item.status.toLowerCase().contains(searchTerm)) ||
+               (item.remarks?.toLowerCase().contains(searchTerm) ?? false);
+      }).toList();
     }
-    return _updateData.sublist(startIndex, endIndex);
+
+    // 2. 드롭다운 필터링
+    if (_selectedTargetSystem != null) {
+      filteredData = filteredData.where((item) => item.targetSystem == _selectedTargetSystem).toList();
+    }
+    if (_selectedUpdateType != null) {
+      filteredData = filteredData.where((item) => item.updateType == _selectedUpdateType).toList();
+    }
+    if (_selectedStatus != null) {
+      filteredData = filteredData.where((item) => item.status == _selectedStatus).toList();
+    }
+
+    // 3. 첨부파일 유무 필터링 (새로 추가)
+    if (_filterByAttachment) {
+      filteredData = filteredData.where((item) {
+        final attachmentCount = item.id != null ? _attachmentCounts[item.id] ?? 0 : 0;
+        return attachmentCount > 0;
+      }).toList();
+    }
+
+    // 4. 정렬 (PlutoGrid 내부 정렬 대신 직접 구현)
+    filteredData.sort((a, b) {
+      int compare = 0;
+      switch (_currentSortColumn) {
+        case 'no':
+          compare = a.no.compareTo(b.no);
+          break;
+        case 'regDate':
+          compare = a.regDate.compareTo(b.regDate);
+          break;
+        case 'updateCode':
+          compare = (a.updateCode ?? '').compareTo(b.updateCode ?? '');
+          break;
+        case 'targetSystem':
+          compare = a.targetSystem.compareTo(b.targetSystem);
+          break;
+        case 'developer':
+          compare = (a.developer ?? '').compareTo(b.developer ?? '');
+          break;
+        case 'description':
+          compare = a.description.compareTo(b.description);
+          break;
+        case 'updateType':
+          compare = a.updateType.compareTo(b.updateType);
+          break;
+        case 'assignee':
+          compare = a.assignee.compareTo(b.assignee);
+          break;
+        case 'status':
+          compare = a.status.compareTo(b.status);
+          break;
+        case 'completionDate':
+          // Handle nulls for date comparison
+          DateTime dateA = a.completionDate ?? DateTime(1900);
+          DateTime dateB = b.completionDate ?? DateTime(1900);
+          compare = dateA.compareTo(dateB);
+          break;
+        case 'attachments': // 첨부파일 개수로 정렬
+          int countA = a.id != null ? _attachmentCounts[a.id] ?? 0 : 0;
+          int countB = b.id != null ? _attachmentCounts[b.id] ?? 0 : 0;
+          compare = countA.compareTo(countB);
+          break;
+        case 'remarks':
+          compare = (a.remarks ?? '').compareTo(b.remarks ?? '');
+          break;
+        default:
+          compare = a.regDate.compareTo(b.regDate); // Default sort by regDate
+      }
+      return _isAscending ? compare : -compare;
+    });
+
+    return filteredData;
+  }
+
+  // 페이지네이션 데이터 계산 (필터링/정렬된 데이터 사용)
+  List<SystemUpdateModel> _paginatedData() {
+    final data = _getFilteredAndSortedData(); // 수정된 데이터 소스 사용
+    if (data.isEmpty) return [];
+
+    // 페이지네이션 재계산
+    _totalPages = (data.length / _rowsPerPage).ceil();
+    // 현재 페이지가 총 페이지 수를 넘지 않도록 조정
+    if (_currentPage >= _totalPages && _totalPages > 0) {
+       // Use WidgetsBinding to schedule state update after build
+       WidgetsBinding.instance.addPostFrameCallback((_) {
+         if (mounted) { // Check if the widget is still mounted
+           setState(() {
+             _currentPage = _totalPages - 1;
+           });
+           _refreshPlutoGrid(); // Refresh grid after page adjustment
+         }
+       });
+    } else if (_currentPage < 0) {
+       WidgetsBinding.instance.addPostFrameCallback((_) {
+         if (mounted) {
+           setState(() {
+             _currentPage = 0;
+           });
+           _refreshPlutoGrid();
+         }
+       });
+    }
+
+    final startIndex = _currentPage * _rowsPerPage;
+    final endIndex = (startIndex + _rowsPerPage > data.length)
+        ? data.length
+        : startIndex + _rowsPerPage;
+
+    if (startIndex >= data.length && data.isNotEmpty) {
+       // This case should ideally be handled by the adjustment above
+       // If it still happens, return the last page
+       int lastPage = _totalPages > 0 ? _totalPages - 1 : 0;
+       int lastPageStart = lastPage * _rowsPerPage;
+       return data.sublist(lastPageStart, data.length);
+    }
+    if (startIndex < 0) return data.sublist(0, endIndex); // Should not happen
+
+    return data.sublist(startIndex, endIndex);
   }
 
   Future<DateTime?> _selectDate(BuildContext context, DateTime? initialDate) async {
@@ -271,7 +418,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     );
   }
 
-  bool _onCellChanged(PlutoGridOnChangedEvent event) {
+  bool _onCellChanged(pluto_grid_plus.PlutoGridOnChangedEvent event) {
     final field = event.column.field;
     final rowIdx = event.rowIdx;
     
@@ -369,8 +516,8 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     }
   }
 
-  List<PlutoRow> _getPlutoRows() {
-    final List<PlutoRow> rows = [];
+  List<pluto_grid_plus.PlutoRow> _getPlutoRows() {
+    final List<pluto_grid_plus.PlutoRow> rows = [];
     final pageData = _paginatedData();
     
     try {
@@ -382,21 +529,21 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         final attachmentText = attachmentCount > 0 ? '첨부($attachmentCount)' : '첨부';
         
         // 행 생성
-        final PlutoRow row = PlutoRow(
+        final pluto_grid_plus.PlutoRow row = pluto_grid_plus.PlutoRow(
           cells: {
-            'selected': PlutoCell(value: _selectedUpdateCodes.contains(data.updateCode)),
-            'no': PlutoCell(value: data.no.toString()),
-            'regDate': PlutoCell(value: data.regDate),
-            'updateCode': PlutoCell(value: data.updateCode ?? ''),
-            'targetSystem': PlutoCell(value: data.targetSystem),
-            'developer': PlutoCell(value: data.developer ?? _developerList.first),
-            'description': PlutoCell(value: data.description),
-            'updateType': PlutoCell(value: data.updateType),
-            'assignee': PlutoCell(value: data.assignee),
-            'status': PlutoCell(value: data.status),
-            'completionDate': PlutoCell(value: data.completionDate),
-            'attachments': PlutoCell(value: attachmentText),
-            'remarks': PlutoCell(value: data.remarks),
+            'selected': pluto_grid_plus.PlutoCell(value: _selectedUpdateCodes.contains(data.updateCode)),
+            'no': pluto_grid_plus.PlutoCell(value: data.no.toString()),
+            'regDate': pluto_grid_plus.PlutoCell(value: data.regDate),
+            'updateCode': pluto_grid_plus.PlutoCell(value: data.updateCode ?? ''),
+            'targetSystem': pluto_grid_plus.PlutoCell(value: data.targetSystem),
+            'developer': pluto_grid_plus.PlutoCell(value: data.developer ?? _developerList.first),
+            'description': pluto_grid_plus.PlutoCell(value: data.description),
+            'updateType': pluto_grid_plus.PlutoCell(value: data.updateType),
+            'assignee': pluto_grid_plus.PlutoCell(value: data.assignee),
+            'status': pluto_grid_plus.PlutoCell(value: data.status),
+            'completionDate': pluto_grid_plus.PlutoCell(value: data.completionDate),
+            'attachments': pluto_grid_plus.PlutoCell(value: attachmentText),
+            'remarks': pluto_grid_plus.PlutoCell(value: data.remarks),
           },
         );
         
@@ -409,33 +556,66 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     }
   }
 
-  List<PlutoColumn> get _columns {
+  List<pluto_grid_plus.PlutoColumn> get _columns {
     return [
-      PlutoColumn( title: '', field: 'selected', type: PlutoColumnType.text(), width: 40, enableEditingMode: false, textAlign: PlutoColumnTextAlign.center, renderer: (ctx) => _buildCheckboxRenderer(ctx)),
-      PlutoColumn( title: 'NO', field: 'no', type: PlutoColumnType.text(), width: 60, enableEditingMode: false, textAlign: PlutoColumnTextAlign.center ),
-      PlutoColumn( title: '등록일', field: 'regDate', type: PlutoColumnType.date(), width: 120, enableEditingMode: false ),
-      PlutoColumn( title: '코드', field: 'updateCode', type: PlutoColumnType.text(), width: 120, enableEditingMode: false ),
-      PlutoColumn( title: '솔루션분류', field: 'targetSystem', type: PlutoColumnType.select(_targetSystems), width: 100, enableEditingMode: true ),
-      PlutoColumn( title: '개발사', field: 'developer', type: PlutoColumnType.select(_developerList), width: 100, enableEditingMode: true ),
-      PlutoColumn( title: '세부내용', field: 'description', type: PlutoColumnType.text(), width: 300, enableEditingMode: true ),
-      PlutoColumn( title: '업데이트유형', field: 'updateType', type: PlutoColumnType.select(_updateTypes), width: 110, enableEditingMode: true ),
-      PlutoColumn( title: '담당자', field: 'assignee', type: PlutoColumnType.text(), width: 80, enableEditingMode: true ),
-      PlutoColumn( title: '상태', field: 'status', type: PlutoColumnType.select(_updateStatusList), width: 80, enableEditingMode: true ),
-      PlutoColumn( title: '완료일정', field: 'completionDate', type: PlutoColumnType.date(), width: 120, enableEditingMode: true ),
-      PlutoColumn( 
-        title: '첨부파일', 
-        field: 'attachments', 
-        type: PlutoColumnType.text(), 
-        width: 80, 
+      pluto_grid_plus.PlutoColumn( title: '', field: 'selected', type: pluto_grid_plus.PlutoColumnType.text(), width: 40, enableEditingMode: false, textAlign: pluto_grid_plus.PlutoColumnTextAlign.center, renderer: (ctx) => _buildCheckboxRenderer(ctx)),
+      pluto_grid_plus.PlutoColumn( title: 'NO', field: 'no', type: pluto_grid_plus.PlutoColumnType.text(), width: 60, enableEditingMode: false, sort: pluto_grid_plus.PlutoColumnSort.none, textAlign: pluto_grid_plus.PlutoColumnTextAlign.center ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '등록일', field: 'regDate', type: pluto_grid_plus.PlutoColumnType.date(), width: 120, enableEditingMode: false, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '코드', field: 'updateCode', type: pluto_grid_plus.PlutoColumnType.text(), width: 120, enableEditingMode: false, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '솔루션분류', field: 'targetSystem', type: pluto_grid_plus.PlutoColumnType.select(_targetSystems), width: 100, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '개발사', field: 'developer', type: pluto_grid_plus.PlutoColumnType.select(_developerList), width: 100, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '세부내용', field: 'description', type: pluto_grid_plus.PlutoColumnType.text(), width: 300, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '업데이트유형', field: 'updateType', type: pluto_grid_plus.PlutoColumnType.select(_updateTypes), width: 110, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '담당자', field: 'assignee', type: pluto_grid_plus.PlutoColumnType.text(), width: 80, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '상태', field: 'status', type: pluto_grid_plus.PlutoColumnType.select(_updateStatusList), width: 80, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn( title: '완료일정', field: 'completionDate', type: pluto_grid_plus.PlutoColumnType.date(), width: 120, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
+      pluto_grid_plus.PlutoColumn(
+        title: '첨부파일',
+        field: 'attachments',
+        type: pluto_grid_plus.PlutoColumnType.text(),
+        width: 100,
         enableEditingMode: false,
-        textAlign: PlutoColumnTextAlign.center,
+        textAlign: pluto_grid_plus.PlutoColumnTextAlign.center,
+        sort: pluto_grid_plus.PlutoColumnSort.none,
+        // titleRenderer -> titleSpan 으로 변경
+        titleSpan: _buildAttachmentHeaderSpan(), // Use titleSpan for custom header
         renderer: (ctx) => _buildAttachmentRenderer(ctx),
       ),
-      PlutoColumn( title: '비고', field: 'remarks', type: PlutoColumnType.text(), width: 150, enableEditingMode: true ),
+      pluto_grid_plus.PlutoColumn( title: '비고', field: 'remarks', type: pluto_grid_plus.PlutoColumnType.text(), width: 150, enableEditingMode: true, sort: pluto_grid_plus.PlutoColumnSort.none ), // Disable internal sort
     ];
   }
 
-  Widget _buildCheckboxRenderer(PlutoColumnRendererContext context) {
+  // 첨부파일 컬럼 헤더 Span 생성 함수 (BuildContext 제거)
+  InlineSpan _buildAttachmentHeaderSpan() {
+    // Access theme data indirectly if needed, or use fixed styles
+    final headerColor = _filterByAttachment ? Colors.blue.shade700 : Colors.black87;
+
+    return WidgetSpan(
+       alignment: PlaceholderAlignment.middle,
+       child: InkWell(
+         onTap: () {
+           setState(() {
+             _filterByAttachment = !_filterByAttachment; // 필터 상태 토글
+             _currentPage = 0; // 필터 변경 시 첫 페이지로
+           });
+           _refreshPlutoGrid(); // 필터 적용된 그리드 새로고침
+         },
+         child: Padding(
+           padding: const EdgeInsets.symmetric(horizontal: 4.0), // Adjust padding
+           child: Text(
+             '첨부파일',
+             style: TextStyle(
+               fontWeight: FontWeight.w500, // Standard header weight
+               fontSize: 13, // Match other headers
+               color: headerColor,
+             ),
+           ),
+         ),
+       ),
+     );
+  }
+
+  Widget _buildCheckboxRenderer(pluto_grid_plus.PlutoColumnRendererContext context) {
     return Center(
       child: Checkbox(
         value: context.cell.value as bool? ?? false,
@@ -461,10 +641,18 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
   }
   
   // 첨부파일 셀 렌더러
-  Widget _buildAttachmentRenderer(PlutoColumnRendererContext context) {
+  Widget _buildAttachmentRenderer(pluto_grid_plus.PlutoColumnRendererContext context) {
     final cellValue = context.cell.value as String? ?? '첨부';
     final rowIdx = context.rowIdx;
-    final hasAttachments = cellValue != '첨부';
+    
+    // 셀 값에서 첨부파일 개수 추출
+    int attachmentCount = 0;
+    if (cellValue.startsWith('첨부(') && cellValue.endsWith(')')) {
+      final countStr = cellValue.substring(3, cellValue.length - 1);
+      attachmentCount = int.tryParse(countStr) ?? 0;
+    }
+    
+    final hasAttachments = attachmentCount > 0;
     
     // 색상 및 스타일 설정
     final textColor = hasAttachments ? Colors.blue.shade700 : Colors.grey.shade700;
@@ -492,7 +680,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                cellValue,
+                hasAttachments ? '첨부($attachmentCount)' : '첨부', // 개수 표시
                 style: TextStyle(
                   color: textColor,
                   fontWeight: fontWeight,
@@ -1114,6 +1302,40 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     }
   }
 
+  // 특정 행 저장 함수 추가
+  Future<SystemUpdateModel?> _saveSpecificRow(SystemUpdateModel update) async {
+    if (update.isSaved && update.id != null) {
+      // 이미 저장된 항목이면 그대로 반환
+      return update;
+    }
+    
+    try {
+      debugPrint('특정 행 저장 시도 (${update.updateCode})');
+      final result = await _apiService.addSystemUpdate(update);
+      
+      if (result != null) {
+        // 저장 성공시 원본 데이터 배열 업데이트
+        final index = _updateData.indexWhere((item) => item.no == update.no);
+        if (index != -1 && mounted) {
+          setState(() {
+            _updateData[index] = result.copyWith(isSaved: true, isModified: false);
+          });
+          
+          // 결과 반환
+          return result;
+        } else {
+          return result; // 인덱스 찾지 못하면 그냥 결과 반환
+        }
+      } else {
+        debugPrint('특정 행 저장 실패: API에서 null 반환');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('특정 행 저장 중 오류: $e');
+      return null;
+    }
+  }
+
   // 페이지 전체 빌드
   @override
   Widget build(BuildContext context) {
@@ -1567,6 +1789,17 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       ),
     );
   }
+
+  // 컬럼 정렬 이벤트 처리 (Ensure this method is defined within the State class)
+  void _handleColumnSort(pluto_grid_plus.PlutoGridOnSortedEvent event) {
+    setState(() {
+      _currentSortColumn = event.column.field;
+      // PlutoColumnSort enum 대신 직접 boolean 사용
+      _isAscending = event.column.sort == pluto_grid_plus.PlutoColumnSort.ascending;
+      _currentPage = 0; // 정렬 변경 시 첫 페이지로
+    });
+    _refreshPlutoGrid(); // 정렬 적용된 그리드 새로고침
+  }
 }
 
 // --- 컴포넌트 위젯 정의 (수정 필요) --- 
@@ -1690,10 +1923,7 @@ class ActionButtonsWidget extends StatelessWidget {
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: unsavedChanges ? Colors.blue.shade700 : null,
-              foregroundColor: Colors.white,
-              disabledForegroundColor: Colors.black,
-              disabledIconColor: Colors.black
-            )
+            ),
           )
         ),
         Padding(
@@ -1738,11 +1968,11 @@ class ActionButtonsWidget extends StatelessWidget {
 
 // DataTableWidget (기존과 동일, SystemUpdateModel 기준)
 class DataTableWidget extends StatelessWidget {
-  final List<PlutoColumn> columns;
-  final List<PlutoRow> rows;
-  final PlutoGridStateManager? gridStateManager;
-  final Function(PlutoGridOnLoadedEvent) onLoaded;
-  final Function(PlutoGridOnChangedEvent) onChanged;
+  final List<pluto_grid_plus.PlutoColumn> columns;
+  final List<pluto_grid_plus.PlutoRow> rows;
+  final pluto_grid_plus.PlutoGridStateManager? gridStateManager;
+  final Function(pluto_grid_plus.PlutoGridOnLoadedEvent) onLoaded;
+  final Function(pluto_grid_plus.PlutoGridOnChangedEvent) onChanged;
   final int currentPage;
   final int totalPages;
   final Function(int) onPageChanged;
@@ -1782,14 +2012,14 @@ class DataTableWidget extends StatelessWidget {
       );
     }
     
-    return PlutoGrid(
+    return pluto_grid_plus.PlutoGrid(
             columns: columns,
             rows: rows,
             onLoaded: onLoaded,
             onChanged: onChanged,
-      mode: PlutoGridMode.normal,
-            configuration: PlutoGridConfiguration(
-              style: PlutoGridStyleConfig(
+      mode: pluto_grid_plus.PlutoGridMode.normal,
+            configuration: pluto_grid_plus.PlutoGridConfiguration(
+              style: pluto_grid_plus.PlutoGridStyleConfig(
                 cellTextStyle: const TextStyle(fontSize: 12),
                 columnTextStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                 rowColor: Colors.white,
