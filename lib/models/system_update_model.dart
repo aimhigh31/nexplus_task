@@ -43,9 +43,9 @@ class SystemUpdateModel {
       'updateCode': updateCode,
       'targetSystem': targetSystem,
       'developer': developer, // 개발사 필드 추가
-      'description': description,
+      'description': description.isEmpty ? '내용 없음' : description, // 빈 description 처리
       'updateType': updateType,
-      'assignee': assignee,
+      'assignee': assignee.isEmpty ? '미지정' : assignee, // 빈 assignee 처리
       'status': status,
       'completionDate': completionDate != null ? dateFormat.format(completionDate!) : null,
       'remarks': remarks,
@@ -58,7 +58,7 @@ class SystemUpdateModel {
   factory SystemUpdateModel.fromJson(Map<String, dynamic> json) {
     final dateFormat = DateFormat('yyyy-MM-dd');
     return SystemUpdateModel(
-      id: json['_id'],
+      id: json['_id'] ?? json['id'],
       no: json['no'],
       regDate: json['regDate'] is String
           ? dateFormat.parse(json['regDate'])
@@ -66,9 +66,9 @@ class SystemUpdateModel {
       updateCode: json['updateCode'],
       targetSystem: json['targetSystem'],
       developer: json['developer'] ?? '건솔루션', // 개발사 필드 기본값 설정
-      description: json['description'],
+      description: json['description'] ?? '내용 없음', // description 기본값 설정
       updateType: json['updateType'],
-      assignee: json['assignee'],
+      assignee: json['assignee'] ?? '미지정', // assignee 기본값 설정
       status: json['status'],
       completionDate: json['completionDate'] == null
           ? null

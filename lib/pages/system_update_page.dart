@@ -11,6 +11,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:file_saver/file_saver.dart';
 import 'dart:typed_data';
 import 'dart:io';
+import '../widgets/attachment_popup.dart'; // 첨부파일 팝업 위젯 추가
+import '../models/attachment_model.dart'; // 첨부파일 모델 추가
 
 class SystemUpdatePage extends StatefulWidget {
   const SystemUpdatePage({super.key});
@@ -46,6 +48,9 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
 
   // 데이터
   List<SystemUpdateModel> _updateData = [];
+
+  // 첨부파일 개수 데이터 맵 (업데이트ID -> 첨부파일 개수)
+  Map<String, int> _attachmentCounts = {};
 
   // 상태
   bool _hasSelectedItems = false;
@@ -95,6 +100,9 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
           _totalPages = (_updateData.length / _rowsPerPage).ceil();
           _currentPage = 0;
         });
+        
+        // 첨부파일 개수 로드
+        _loadAttachmentCounts();
       }
     } catch (e) {
       debugPrint('데이터 초기화 중 오류: $e');
@@ -111,6 +119,105 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  // 첨부파일 개수 로드 함수
+  Future<void> _loadAttachmentCounts() async {
+    try {
+      debugPrint('첨부파일 개수 로드 시작...');
+      final Map<String, int> counts = {};
+      
+      // 현재 페이지에 표시된 항목만 첨부파일 개수 로드
+      for (final item in _paginatedData()) {
+        if (item.id == null) {
+          debugPrint('ID가 없는 항목 건너뜀 (저장되지 않은 항목): ${item.updateCode}');
+          counts[item.no.toString()] = 0; // 저장되지 않은 항목은 ID 대신 no를 키로 사용
+          continue;
+        }
+        
+        try {
+          // 임시 ID 또는 로컬 ID 확인
+          final tempId = 'temp_${item.no}_${item.updateCode}';
+          
+          // 첨부파일 목록 요청
+          debugPrint('항목의 첨부파일 개수 확인: ${item.id}, ${item.updateCode}');
+          final attachments = await _apiService.getAttachments(
+            entityId: item.id!,
+            entityType: 'system_update',
+          );
+          
+          // 임시 ID로 첨부파일 추가 확인
+          final tempAttachments = await _apiService.getAttachments(
+            entityId: tempId,
+            entityType: 'system_update',
+          );
+          
+          // 실제 항목과 임시 항목의 첨부파일 합계
+          int totalCount = attachments.length + tempAttachments.length;
+          counts[item.id!] = totalCount;
+          debugPrint('첨부파일 개수: $totalCount (서버: ${attachments.length}, 임시: ${tempAttachments.length}), 항목: ${item.updateCode}');
+        } catch (itemError) {
+          debugPrint('항목 첨부파일 개수 로드 중 오류: ${item.updateCode}, $itemError');
+          // 오류가 발생한 경우 기존 카운트 유지 (없으면 0으로 설정)
+          if (!counts.containsKey(item.id!)) {
+            counts[item.id!] = 0;
+          }
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _attachmentCounts = counts;
+          debugPrint('첨부파일 개수 업데이트 완료: ${counts.length}개 항목');
+        });
+        
+        // 그리드 새로고침
+        _refreshPlutoGrid();
+      }
+    } catch (e) {
+      debugPrint('첨부파일 개수 로드 중 오류: $e');
+      // 오류 발생 시에도 그리드 새로고침
+      _refreshPlutoGrid();
+    }
+  }
+
+  // 첨부파일 팝업 표시 함수
+  void _showAttachmentPopup(BuildContext context, SystemUpdateModel update) {
+    final String entityId;
+    final bool isUnsaved;
+    
+    if (update.id == null) {
+      // ID가 없는 경우(저장되지 않은 경우) no를 임시 ID로 사용
+      entityId = 'temp_${update.no}_${update.updateCode}';
+      isUnsaved = true;
+    } else {
+      entityId = update.id!;
+      isUnsaved = false;
+    }
+    
+    if (isUnsaved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('저장되지 않은 항목입니다. 첨부파일은 임시로 저장됩니다. 항목 저장 후 첨부파일이 영구적으로 저장됩니다.'),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+    
+    debugPrint('첨부파일 팝업 열기: 항목 ID ${entityId}, 코드 ${update.updateCode}');
+    
+    showDialog(
+      context: context,
+      builder: (context) => AttachmentPopup(
+        entityId: entityId,
+        entityType: 'system_update',
+        entityName: '솔루션 개발 [${update.updateCode}]',
+      ),
+    ).then((_) {
+      // 팝업이 닫힌 후 첨부파일 개수 다시 로드
+      debugPrint('첨부파일 팝업 닫힘, 첨부파일 개수 다시 로드');
+      _loadAttachmentCounts();
+    });
   }
 
   // 샘플 데이터 생성 함수 추가
@@ -267,30 +374,35 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     final pageData = _paginatedData();
     
     try {
-    for (var index = 0; index < pageData.length; index++) {
-      final data = pageData[index];
+      for (var index = 0; index < pageData.length; index++) {
+        final data = pageData[index];
+        
+        // 첨부파일 개수 가져오기
+        final attachmentCount = data.id != null ? _attachmentCounts[data.id] ?? 0 : 0;
+        final attachmentText = attachmentCount > 0 ? '첨부($attachmentCount)' : '첨부';
         
         // 행 생성
         final PlutoRow row = PlutoRow(
-        cells: {
-          'selected': PlutoCell(value: _selectedUpdateCodes.contains(data.updateCode)),
+          cells: {
+            'selected': PlutoCell(value: _selectedUpdateCodes.contains(data.updateCode)),
             'no': PlutoCell(value: data.no.toString()),
-          'regDate': PlutoCell(value: data.regDate),
-          'updateCode': PlutoCell(value: data.updateCode ?? ''),
-          'targetSystem': PlutoCell(value: data.targetSystem),
+            'regDate': PlutoCell(value: data.regDate),
+            'updateCode': PlutoCell(value: data.updateCode ?? ''),
+            'targetSystem': PlutoCell(value: data.targetSystem),
             'developer': PlutoCell(value: data.developer ?? _developerList.first),
-          'description': PlutoCell(value: data.description),
-          'updateType': PlutoCell(value: data.updateType),
-          'assignee': PlutoCell(value: data.assignee),
-          'status': PlutoCell(value: data.status),
-          'completionDate': PlutoCell(value: data.completionDate),
-          'remarks': PlutoCell(value: data.remarks),
-        },
+            'description': PlutoCell(value: data.description),
+            'updateType': PlutoCell(value: data.updateType),
+            'assignee': PlutoCell(value: data.assignee),
+            'status': PlutoCell(value: data.status),
+            'completionDate': PlutoCell(value: data.completionDate),
+            'attachments': PlutoCell(value: attachmentText),
+            'remarks': PlutoCell(value: data.remarks),
+          },
         );
         
         rows.add(row);
-    }
-    return rows;
+      }
+      return rows;
     } catch (e) {
       debugPrint('PlutoRow 생성 중 오류: $e');
       return [];
@@ -310,6 +422,15 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       PlutoColumn( title: '담당자', field: 'assignee', type: PlutoColumnType.text(), width: 80, enableEditingMode: true ),
       PlutoColumn( title: '상태', field: 'status', type: PlutoColumnType.select(_updateStatusList), width: 80, enableEditingMode: true ),
       PlutoColumn( title: '완료일정', field: 'completionDate', type: PlutoColumnType.date(), width: 120, enableEditingMode: true ),
+      PlutoColumn( 
+        title: '첨부파일', 
+        field: 'attachments', 
+        type: PlutoColumnType.text(), 
+        width: 80, 
+        enableEditingMode: false,
+        textAlign: PlutoColumnTextAlign.center,
+        renderer: (ctx) => _buildAttachmentRenderer(ctx),
+      ),
       PlutoColumn( title: '비고', field: 'remarks', type: PlutoColumnType.text(), width: 150, enableEditingMode: true ),
     ];
   }
@@ -338,6 +459,53 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       ),
     );
   }
+  
+  // 첨부파일 셀 렌더러
+  Widget _buildAttachmentRenderer(PlutoColumnRendererContext context) {
+    final cellValue = context.cell.value as String? ?? '첨부';
+    final rowIdx = context.rowIdx;
+    final hasAttachments = cellValue != '첨부';
+    
+    // 색상 및 스타일 설정
+    final textColor = hasAttachments ? Colors.blue.shade700 : Colors.grey.shade700;
+    final fontWeight = hasAttachments ? FontWeight.w500 : FontWeight.normal;
+    
+    return InkWell(
+      onTap: () {
+        if (rowIdx < 0 || rowIdx >= _paginatedData().length) return;
+        
+        final update = _paginatedData()[rowIdx];
+        _showAttachmentPopup(context.stateManager.gridFocusNode.context!, update);
+      },
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.attach_file,
+              size: 16,
+              color: textColor,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                cellValue,
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: fontWeight,
+                  fontSize: 13,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   void _handleRowCheckChanged(String? code, int no, bool? checked) {
     if (code == null) return;
@@ -361,6 +529,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     });
   }
 
+  // 행 추가 기능
   void _addEmptyRow() {
     setState(() {
       // 새로운 항목 번호 계산
@@ -369,11 +538,11 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         : (_updateData.map((item) => item.no).reduce((a, b) => a > b ? a : b) + 1);
       
       // 새로운 업데이트 코드 생성
-    final now = DateTime.now();
+      final now = DateTime.now();
       final String newCode = _generateUpdateCode(now, newNo);
 
       // 새 업데이트 항목 생성
-    final newUpdate = SystemUpdateModel(
+      final newUpdate = SystemUpdateModel(
         no: newNo,
         regDate: now,
         updateCode: newCode,
@@ -400,6 +569,73 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     
     // 그리드 새로고침
     _refreshPlutoGrid();
+    
+    // 즉시 저장 실행 (서버에 바로 저장)
+    _saveNewRow();
+  }
+  
+  // 새로 추가된 행만 서버에 저장
+  Future<void> _saveNewRow() async {
+    if (_updateData.isEmpty) return;
+    
+    // 가장 최근에 추가된 미저장 행을 찾음
+    final dataToSave = _updateData.firstWhere(
+      (item) => !item.isSaved, 
+      orElse: () => SystemUpdateModel(
+        no: 0, regDate: DateTime.now(), targetSystem: '', 
+        developer: _developerList.first, description: '', updateType: '', 
+        assignee: '', status: '', remarks: '')
+    );
+    
+    if (dataToSave.no == 0) return; // 유효한 미저장 행이 없는 경우
+    
+    setState(() => _isLoading = true);
+    
+    try {
+      debugPrint('새 행 저장 시도: ${dataToSave.updateCode}');
+      final result = await _apiService.addSystemUpdate(dataToSave);
+      
+      if (result != null) {
+        final index = _updateData.indexWhere((item) => item.no == dataToSave.no);
+        if (index != -1) {
+          setState(() {
+            _updateData[index] = SystemUpdateModel(
+              id: result.id,
+              no: result.no,
+              regDate: result.regDate,
+              updateCode: result.updateCode,
+              targetSystem: result.targetSystem,
+              developer: result.developer,
+              description: result.description,
+              updateType: result.updateType,
+              assignee: result.assignee,
+              status: result.status,
+              completionDate: result.completionDate,
+              remarks: result.remarks,
+              isSaved: true,
+              isModified: false,
+            );
+          });
+          
+          debugPrint('새 행 저장 성공: ${result.updateCode}');
+          
+          // 로딩 중 표시 짧게 유지 (사용자 경험 향상)
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              setState(() => _isLoading = false);
+              // 첨부파일 카운트 로드
+              _loadAttachmentCounts();
+            }
+          });
+        }
+      } else {
+        debugPrint('새 행 저장 실패');
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      debugPrint('새 행 저장 중 오류: $e');
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _saveAllData() async {
@@ -470,6 +706,8 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       
       // 그리드 새로고침
       if (_gridStateManager != null) {
+        _gridStateManager!.rows.clear();
+        _gridStateManager!.rows.addAll(_getPlutoRows());
         _gridStateManager!.notifyListeners();
       }
       
@@ -481,7 +719,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       // 데이터 다시 로드하여 동기화 상태 확인
       await _reloadData();
       
-      } catch (e) {
+    } catch (e) {
       debugPrint('데이터 저장 중 오류: $e');
     } finally {
       setState(() => _isLoading = false);
@@ -553,6 +791,9 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
           _hasSelectedItems = _selectedUpdateCodes.isNotEmpty;
         });
         
+        // 첨부파일 개수 로드
+        await _loadAttachmentCounts();
+        
         // 그리드 새로고침
         _refreshPlutoGrid();
       } else {
@@ -562,6 +803,14 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       debugPrint('데이터 다시 로드 중 오류: $e');
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  void _refreshPlutoGrid() {
+    if (_gridStateManager != null) {
+      _gridStateManager!.rows.clear();
+      _gridStateManager!.rows.addAll(_getPlutoRows());
+      _gridStateManager!.notifyListeners();
     }
   }
 
@@ -658,8 +907,8 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
 
       // 헤더 설정
       final headers = [
-        'No', '등록일', '코드', '솔루션분류', '세부내용',
-        '업데이트유형', '담당자', '상태', '완료일정', '비고'
+        'No', '등록일', '코드', '솔루션분류', '개발사', '세부내용',
+        '업데이트유형', '담당자', '상태', '완료일정', '첨부파일 수', '비고'
       ];
 
       // 헤더 스타일 생성
@@ -682,6 +931,9 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       for (var i = 0; i < _updateData.length; i++) {
         final item = _updateData[i];
         final rowIndex = i + 1;
+        
+        // 첨부파일 개수 가져오기
+        final attachmentCount = item.id != null ? _attachmentCounts[item.id] ?? 0 : 0;
 
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex))
           .value = TextCellValue(item.no.toString());
@@ -694,25 +946,31 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: rowIndex))
           .value = TextCellValue(item.targetSystem);
-        
+          
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: rowIndex))
-          .value = TextCellValue(item.description);
+          .value = TextCellValue(item.developer);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: rowIndex))
-          .value = TextCellValue(item.updateType);
+          .value = TextCellValue(item.description);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rowIndex))
-          .value = TextCellValue(item.assignee);
+          .value = TextCellValue(item.updateType);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: rowIndex))
-          .value = TextCellValue(item.status);
+          .value = TextCellValue(item.assignee);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rowIndex))
+          .value = TextCellValue(item.status);
+        
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: rowIndex))
           .value = TextCellValue(item.completionDate != null 
               ? dateFormat.format(item.completionDate!) 
                 : '');
+                
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: rowIndex))
+          .value = TextCellValue(attachmentCount.toString());
         
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: rowIndex))
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: rowIndex))
           .value = TextCellValue(item.remarks);
       }
 
@@ -720,7 +978,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       for (var i = 0; i < headers.length; i++) {
         sheet.setColumnWidth(i, 15.0);
       }
-      sheet.setColumnWidth(4, 40.0); // 세부내용 열은 더 넓게
+      sheet.setColumnWidth(5, 40.0); // 세부내용 열은 더 넓게
 
       // 엑셀 파일 생성
       final excelBytes = excel.encode();
@@ -805,19 +1063,16 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
     if (page < 0 || page >= _totalPages) return;
     setState(() { _currentPage = page; });
     _refreshPlutoGrid();
+    
+    // 페이지 변경 시 첨부파일 개수 다시 로드
+    _loadAttachmentCounts();
   }
 
-  void _refreshPlutoGrid() {
-    if (_gridStateManager != null) {
-      _gridStateManager!.removeAllRows();
-      final rows = _getPlutoRows();
-      _gridStateManager!.appendRows(rows);
-      if (rows.isNotEmpty) { _gridStateManager!.setCurrentCell(rows.first.cells.values.first, 0); }
-      _updateSelectedState();
-    }
+  void _updateSelectedState() { 
+    setState(() { 
+      _hasSelectedItems = _selectedUpdateCodes.isNotEmpty; 
+    }); 
   }
-
-  void _updateSelectedState() { setState(() { _hasSelectedItems = _selectedUpdateCodes.isNotEmpty; }); }
 
   // 검색 및 필터 적용 시 데이터 로드 함수
   Future<void> _loadFilteredData() async {
@@ -845,10 +1100,14 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
           _currentPage = 0;
         });
       }
+      
+      // 첨부파일 개수 로드
+      await _loadAttachmentCounts();
+      
       // 그리드 새로고침
       _refreshPlutoGrid();
       
-          } catch (e) {
+    } catch (e) {
       debugPrint('필터링 데이터 로드 중 오류: $e');
     } finally {
       setState(() => _isLoading = false);
