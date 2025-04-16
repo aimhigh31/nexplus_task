@@ -371,9 +371,15 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   Future<void> _loadConnectionData() async {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     
+    setState(() { 
+      _isLoading = true; 
+      // 초기 데이터 로딩일 경우 데이터를 비우지 않고 로딩 표시만 함
+      // _connectionData.clear(); // 이 줄을 주석 처리하여 깜빡임 방지
+    });
+    
     _debounce = Timer(const Duration(milliseconds: 500), () async {
       try {
-        setState(() { _isLoading = true; });
+        debugPrint('설비 연동 데이터 로드 시작');
         
         // API 호출
         final data = await _apiService.fetchEquipmentConnections(
@@ -388,12 +394,12 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
         
         if (mounted) {
           setState(() {
-            _connectionData.clear();
-            _connectionData.addAll(data);
+            _connectionData = data; // 기존 데이터를 새 데이터로 대체
+            _totalItems = data.length;
             _totalPages = math.max(1, (_connectionData.length / _rowsPerPage).ceil());
             
             if (_currentPage > _totalPages) {
-              _currentPage = _totalPages;
+              _currentPage = math.max(1, _totalPages);
             }
             
             // 라인과 설비 목록 추출
@@ -403,12 +409,17 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
             _isLoading = false;
           });
           
+          debugPrint('설비 연동 데이터 로드 완료: ${data.length}개 항목');
+          // 데이터가 준비된 후 그리드 새로고침
           _refreshGrid();
         }
       } catch (e) {
         if (mounted) {
-          setState(() { _isLoading = false; });
           debugPrint('설비 연동 데이터 로드 오류: $e');
+          setState(() { 
+            _isLoading = false;
+            // 오류 발생 시 기존 데이터 유지
+          });
         }
       }
     });
@@ -514,8 +525,13 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     if (!mounted || _gridStateManager == null) return;
     
     try {
+      debugPrint('그리드 새로고침 시작');
+      // 새로고침 전에 상태를 디버깅
+      final rowsToAdd = _getGridRows();
+      debugPrint('추가할 행 수: ${rowsToAdd.length}');
+      
       _gridStateManager!.removeAllRows();
-      _gridStateManager!.appendRows(_getGridRows());
+      _gridStateManager!.appendRows(rowsToAdd);
       
       // 스크롤을 맨 위로 이동 (안전하게 처리)
       if (_gridStateManager!.scroll.vertical != null) {
@@ -524,6 +540,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
       
       // 그리드 상태 관리자에 변경 알림
       _gridStateManager!.notifyListeners();
+      debugPrint('그리드 새로고침 완료');
     } catch (e) {
       debugPrint('그리드 새로고침 오류: $e');
     }
@@ -878,111 +895,27 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     }
   }
 
-  // 데이터 탭 UI 빌드 (컴포넌트 사용)
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // 1. 필터 위젯
-        EquipmentFilterWidget(
-          searchController: _searchController,
-          selectedLine: _selectedLine,
-          selectedEquipment: _selectedEquipment,
-          selectedStatus: _selectedStatus,
-          lines: _lines,
-          equipments: _equipments,
-          onLineChanged: (value) {
-            setState(() {
-              _selectedLine = value;
-              _currentPage = 1;
-              _loadConnectionData();
-            });
-          },
-          onEquipmentChanged: (value) {
-            setState(() {
-              _selectedEquipment = value;
-              _currentPage = 1;
-              _loadConnectionData();
-            });
-          },
-          onStatusChanged: (value) {
-            setState(() {
-              _selectedStatus = value;
-              _currentPage = 1;
-              _loadConnectionData();
-            });
-          },
-          onSearchChanged: () {
-            setState(() {
-              _currentPage = 1;
-              _loadConnectionData();
-            });
-          },
-        ),
-        
-        // 2. 실행 버튼 위젯
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            children: [
-              Expanded(
-                child: ActionButtonsWidget(
-                  hasSelection: _hasSelectedItems,
-                  hasUnsavedChanges: _unsavedChanges,
-                  isAdmin: true,
-                  onAddRow: _addNewConnection,
-                  onSaveChanges: _saveChanges,
-                  onDeleteSelected: _deleteSelectedItems,
-                  onExportExcel: _exportToExcel,
-                  onImportExcel: _showAdminPasswordDialog,
-                  totalItems: _connectionData.length,
-                  currentPage: _currentPage,
-                  totalPages: _totalPages,
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        // 3. 데이터 테이블 및 범례
-        Expanded(
-          child: _isLoading 
-            ? const Center(child: CircularProgressIndicator())
-            : _connectionData.isEmpty
-              ? _buildEmptyDataView() // 데이터가 없을 때 빈 데이터 화면 표시
-              : Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: CommonDataTableWidget(
-                    columns: _columns,
-                    rows: _getGridRows(),
-                    currentPage: _currentPage - 1, // CommonDataTableWidget은 0부터 시작하므로 1을 빼줍니다
-                    totalPages: _totalPages,
-                    hasUnsavedChanges: _unsavedChanges,
-                    onChanged: _handleCellChanged,
-                    onPageChanged: (page) => _changePage(page + 1), // 페이지 번호에 1을 더해 _changePage 호출
-                    onLoaded: (PlutoGridOnLoadedEvent event) {
-                      _gridStateManager = event.stateManager;
-                      event.stateManager.setSelectingMode(PlutoGridSelectingMode.row);
-                    },
-                    onRowChecked: (PlutoGridOnRowCheckedEvent event) {
-                      if (event.row != null) {
-                        _toggleRowSelection(event.row!);
-                      }
-                    },
-                    legendItems: [
-                      LegendItem(label: '작업 중', color: Colors.yellow.shade100),
-                      LegendItem(label: '완료', color: Colors.green.shade100),
-                      LegendItem(label: '보류', color: Colors.red.shade100),
-                    ],
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
   // 데이터가 없을 때 표시할 뷰
   Widget _buildEmptyDataView() {
+    if (_isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 24),
+            Text(
+              '데이터를 불러오는 중입니다...',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1187,6 +1120,126 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     } finally {
       setState(() { _isLoading = false; });
     }
+  }
+
+  // build 메서드 추가
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // 1. 필터 위젯
+        EquipmentFilterWidget(
+          searchController: _searchController,
+          selectedLine: _selectedLine,
+          selectedEquipment: _selectedEquipment,
+          selectedStatus: _selectedStatus,
+          lines: _lines,
+          equipments: _equipments,
+          onLineChanged: (value) {
+            setState(() {
+              _selectedLine = value;
+              _currentPage = 1;
+            });
+            _loadConnectionData(); // setState 밖으로 이동하여 불필요한 리렌더링 방지
+          },
+          onEquipmentChanged: (value) {
+            setState(() {
+              _selectedEquipment = value;
+              _currentPage = 1;
+            });
+            _loadConnectionData(); // setState 밖으로 이동
+          },
+          onStatusChanged: (value) {
+            setState(() {
+              _selectedStatus = value;
+              _currentPage = 1;
+            });
+            _loadConnectionData(); // setState 밖으로 이동
+          },
+          onSearchChanged: () {
+            setState(() {
+              _currentPage = 1;
+            });
+            _loadConnectionData(); // setState 밖으로 이동
+          },
+        ),
+        
+        // 2. 실행 버튼 위젯
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: ActionButtonsWidget(
+                  hasSelection: _hasSelectedItems,
+                  hasUnsavedChanges: _unsavedChanges,
+                  isAdmin: true,
+                  onAddRow: _addNewConnection,
+                  onSaveChanges: _saveChanges,
+                  onDeleteSelected: _deleteSelectedItems,
+                  onExportExcel: _exportToExcel,
+                  onImportExcel: _showAdminPasswordDialog,
+                  totalItems: _connectionData.length,
+                  currentPage: _currentPage,
+                  totalPages: _totalPages,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // 3. 데이터 테이블 및 범례
+        Expanded(
+          child: _isLoading 
+            ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('데이터를 불러오는 중입니다...', style: TextStyle(fontSize: 16)),
+                  ],
+                ),
+              )
+            : _connectionData.isEmpty
+              ? _buildEmptyDataView() // 데이터가 없을 때 빈 데이터 화면 표시
+              : Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: CommonDataTableWidget(
+                    columns: _columns,
+                    rows: _getGridRows(),
+                    currentPage: _currentPage - 1, // CommonDataTableWidget은 0부터 시작하므로 1을 빼줍니다
+                    totalPages: _totalPages,
+                    hasUnsavedChanges: _unsavedChanges,
+                    onChanged: _handleCellChanged,
+                    onPageChanged: (page) => _changePage(page + 1), // 페이지 번호에 1을 더해 _changePage 호출
+                    onLoaded: (PlutoGridOnLoadedEvent event) {
+                      _gridStateManager = event.stateManager;
+                      event.stateManager.setSelectingMode(PlutoGridSelectingMode.row);
+                      
+                      // 그리드가 로드된 직후 그리드 새로고침 호출
+                      // 이 방법으로 초기 데이터가 표시되지 않는 문제 해결
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && _gridStateManager != null) {
+                          _refreshGrid();
+                        }
+                      });
+                    },
+                    onRowChecked: (PlutoGridOnRowCheckedEvent event) {
+                      if (event.row != null) {
+                        _toggleRowSelection(event.row!);
+                      }
+                    },
+                    legendItems: [
+                      LegendItem(label: '작업 중', color: Colors.yellow.shade100),
+                      LegendItem(label: '완료', color: Colors.green.shade100),
+                      LegendItem(label: '보류', color: Colors.red.shade100),
+                    ],
+                  ),
+                ),
+        ),
+      ],
+    );
   }
 }
 

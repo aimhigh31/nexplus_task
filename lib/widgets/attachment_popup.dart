@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:convert' show latin1;
 
 /// 첨부파일 팝업 위젯
 class AttachmentPopup extends StatefulWidget {
@@ -58,39 +59,16 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
       );
 
       if (mounted) {
-        // 첨부파일 모델의 originalFilename 필드 디코딩 처리
-        final List<AttachmentModel> decodedAttachments = attachments.map((attachment) {
-          // 한글 파일명 깨짐 문제 해결을 위한 디코딩
-          try {
-            String decodedFilename = Uri.decodeComponent(attachment.originalFilename);
-            // Safari와 Firefox에서 이중 인코딩 문제 해결
-            if (decodedFilename.contains('%')) {
-              decodedFilename = Uri.decodeComponent(decodedFilename);
-            }
-            
-            return AttachmentModel(
-              id: attachment.id,
-              fileName: attachment.fileName,
-              originalFilename: decodedFilename,
-              size: attachment.size,
-              mimeType: attachment.mimeType,
-              uploadDate: attachment.uploadDate,
-              uploaderId: attachment.uploaderId,
-              uploaderName: attachment.uploaderName,
-              relatedEntityId: attachment.relatedEntityId,
-              relatedEntityType: attachment.relatedEntityType,
-            );
-          } catch (e) {
-            debugPrint('파일명 디코딩 오류: $e, 원본 유지');
-            return attachment;
-          }
-        }).toList();
-        
+        // 첨부파일 모델의 originalFilename 필드를 최대한 그대로 사용
         setState(() {
-          _attachments = decodedAttachments;
+          _attachments = attachments; // 서버에서 받은 데이터를 그대로 사용
           _isLoading = false;
         });
         debugPrint('첨부파일 목록 로드 완료 - ${attachments.length}개 항목');
+        // 디버깅을 위해 로드된 파일명 출력
+        for (var att in attachments) {
+           debugPrint('로드된 파일명: ${att.originalFilename} (ID: ${att.id})');
+        }
       }
     } catch (e) {
       debugPrint('첨부파일 목록 로드 중 오류: $e');
@@ -98,11 +76,44 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
         setState(() {
           _errorMessage = '첨부파일을 로드하는 중 오류가 발생했습니다: $e';
           _isLoading = false;
-          // 오류 발생 시에도 빈 목록은 설정
           _attachments = [];
         });
       }
     }
+  }
+
+  // Mojibake (깨진 한글) 복구 시도 함수 (실패 시 표시 추가)
+  String _tryDecodeMojibake(String input) {
+    final mojibakePattern = RegExp(r'[âãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ]{2,}');
+    const replacementChar = '\uFFFD'; // 유니코드 대체 문자
+
+    if (mojibakePattern.hasMatch(input)) {
+      try {
+        final bytes = latin1.encode(input);
+        // UTF-8 디코딩 (allowMalformed: false 로 설정하여 깨진 문자가 있으면 에러 발생 또는 대체 문자로 변환되도록 유도)
+        final decoded = utf8.decode(bytes, allowMalformed: true); 
+
+        // 복구 시도 후에도 여전히 패턴이 존재하거나, 대체 문자가 포함된 경우
+        if (decoded == input || // 변환이 안 됐거나
+            mojibakePattern.hasMatch(decoded) || // 변환 후에도 패턴이 있거나
+            decoded.contains(replacementChar)) { // 대체 문자가 포함된 경우
+              
+          debugPrint('Mojibake 복구 실패 또는 불완전: "$input" -> "$decoded"');
+          // 원본 문자열에 오류 표시 추가하여 반환
+          return '$input (표시 오류)'; 
+        } else {
+          // 성공적으로 복구된 것으로 간주
+          debugPrint('Mojibake 복구 성공: "$input" -> "$decoded"');
+          return decoded;
+        }
+      } catch (e) {
+        debugPrint('Mojibake 디코딩 중 오류: $e, 원본 반환: "$input"');
+        // 디코딩 자체에서 오류 발생 시 원본에 오류 표시 추가
+         return '$input (표시 오류)';
+      }
+    }
+    // Mojibake 패턴이 없으면 원본 그대로 반환
+    return input;
   }
 
   // 파일 선택
@@ -154,10 +165,15 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
       int successCount = 0;
       List<String> failedFiles = [];
       
-      // 각 파일을 개별적으로 업로드
       for (var file in _selectedFiles) {
         try {
-          debugPrint('파일 업로드 시도: ${file.name}');
+          debugPrint('파일 업로드 시도: ${file.name}'); // 원본 파일명 로그 제거 또는 단순화
+          
+          // 파일명 인코딩 확인 로직 제거
+          // final String originalFilename = file.name;
+          // if (_isLikelyKorean(originalFilename)) {
+          //   debugPrint('한글 포함 파일명 감지: $originalFilename');
+          // }
           
           if (file.bytes != null) {
             // 웹 환경에서는 바이트로 접근
@@ -169,6 +185,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
               continue;
             }
             
+            // 파일 업로드 시 원본 파일명 전달 명시
             final result = await _uploadFile(
               fileName: file.name,
               fileBytes: file.bytes!,
@@ -194,6 +211,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
               continue;
             }
             
+            // 원본 파일명도 함께 전달
             final result = await _apiService.uploadFileFromPath(
               filePath: file.path!,
               fileName: file.name,
@@ -324,6 +342,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
         }
       }
       
+      // 원본 파일명을 명시적으로 전달
       final result = await _apiService.uploadFile(
         fileBytes: fileBytes,
         fileName: fileName,
@@ -391,6 +410,9 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
         return;
       }
 
+      // 복구 시도된 파일명
+      final displayFilename = _tryDecodeMojibake(attachment.originalFilename);
+
       // 로컬 또는 임시 첨부파일 확인
       if (attachment.id!.startsWith('local_') || attachment.id!.startsWith('temp_')) {
         setState(() => _isLoading = false);
@@ -403,7 +425,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${attachment.originalFilename} 파일은 로컬에만 저장된 임시 파일입니다.'),
+                  Text('$displayFilename 파일은 로컬에만 저장된 임시 파일입니다.'),
                   const SizedBox(height: 12),
                   const Text('항목을 저장한 후에 다운로드가 가능합니다.'),
                 ],
@@ -432,7 +454,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
                 const SizedBox(width: 16),
-                Text('${attachment.originalFilename} 다운로드 중...'),
+                Text('$displayFilename 다운로드 중...'),
               ],
             ),
             duration: const Duration(seconds: 1),
@@ -440,62 +462,22 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
         );
       }
       
-      // 한글 파일명 깨짐 방지를 위해 UTF-8 인코딩 적용
-      String decodedFilename = Uri.decodeComponent(attachment.originalFilename);
+      // 파일명 처리 - 복구 시도된 파일명을 사용
+      String suggestedFilename = displayFilename;
       
-      debugPrint('첨부파일 다운로드 시작: ${attachment.id} - $decodedFilename');
-      final success = await _apiService.downloadAttachment(attachment.id!);
+      debugPrint('첨부파일 다운로드 시작: ${attachment.id} - suggestedFileName: $suggestedFilename');
+      final success = await _apiService.downloadAttachment(
+        attachment.id!,
+        suggestedFileName: suggestedFilename, // 복구 시도된 파일명 전달
+      );
       
       if (mounted) {
         setState(() => _isLoading = false);
         
         if (success) {
+          // 다운로드 성공 안내
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      '$decodedFilename 다운로드 완료',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.green,
-              action: SnackBarAction(
-                label: '저장 위치 확인',
-                textColor: Colors.white,
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('다운로드 완료'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('파일명: $decodedFilename'),
-                          const SizedBox(height: 8),
-                          const Text('웹 환경: 브라우저 다운로드 폴더에 저장되었습니다.'),
-                          const Text('데스크톱 환경: 선택한 경로에 저장되었습니다.'),
-                          const SizedBox(height: 12),
-                          const Text('다운로드 폴더를 확인해보세요.'),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('확인'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            )
+            SnackBar(content: Text('$suggestedFilename 다운로드 완료'))
           );
         } else {
           // 다운로드 실패 시 사용자에게 상세 안내
@@ -507,7 +489,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$decodedFilename 파일을 다운로드하지 못했습니다.'),
+                  Text('$suggestedFilename 파일을 다운로드하지 못했습니다.'),
                   const SizedBox(height: 12),
                   const Text('가능한 해결 방법:', style: TextStyle(fontWeight: FontWeight.bold)),
                   const Text('• 인터넷 연결을 확인해주세요'),
@@ -582,37 +564,36 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
 
     try {
       int successCount = 0;
-      List<String> failedFiles = [];
+      List<String> failedFilesDisplay = []; // 복구 시도된 파일명 저장용
 
       for (final attachmentId in _selectedAttachments) {
+        AttachmentModel? attachment;
         try {
+          attachment = _attachments.firstWhere((a) => a.id == attachmentId);
           final success = await _apiService.deleteAttachment(attachmentId);
           if (success) {
             successCount++;
           } else {
-            final attachment = _attachments.firstWhere((a) => a.id == attachmentId);
-            failedFiles.add(attachment.originalFilename);
+            failedFilesDisplay.add(_tryDecodeMojibake(attachment.originalFilename));
           }
         } catch (e) {
           debugPrint('파일 삭제 중 오류: $e');
-          final attachment = _attachments.firstWhere((a) => a.id == attachmentId);
-          failedFiles.add(attachment.originalFilename);
+          if (attachment != null) {
+             failedFilesDisplay.add(_tryDecodeMojibake(attachment.originalFilename));
+          }
         }
       }
 
-      // 선택 목록 초기화
       setState(() {
         _selectedAttachments.clear();
         _hasSelectedAttachments = false;
       });
 
-      // 첨부파일 목록 새로고침
       await _loadAttachments();
 
-      // 결과 메시지
       String message = '파일 삭제 완료: $successCount개 삭제됨';
-      if (failedFiles.isNotEmpty) {
-        message += '\n삭제 실패: ${failedFiles.join(', ')}';
+      if (failedFilesDisplay.isNotEmpty) {
+        message += '\n삭제 실패: ${failedFilesDisplay.join(', ')}';
       }
 
       if (mounted) {
@@ -632,11 +613,12 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
 
   // 개별 파일 삭제
   Future<void> _deleteFile(AttachmentModel attachment) async {
+    final displayFilename = _tryDecodeMojibake(attachment.originalFilename);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('파일 삭제'),
-        content: Text('${attachment.originalFilename} 파일을 삭제하시겠습니까?'),
+        content: Text('$displayFilename 파일을 삭제하시겠습니까?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -667,7 +649,7 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${attachment.originalFilename} 삭제 완료')),
+          SnackBar(content: Text('$displayFilename 삭제 완료')),
         );
       }
     } catch (e) {
@@ -923,53 +905,50 @@ class _AttachmentPopupState extends State<AttachmentPopup> {
         final dateFormat = DateFormat('yyyy-MM-dd HH:mm');
         final isSelected = attachment.id != null && _selectedAttachments.contains(attachment.id);
         
-        // 파일명이 표시될 텍스트 위젯 (디코딩된 파일명 사용)
-        final filename = attachment.originalFilename;
+        // Mojibake 복구 시도 및 오류 표시 적용
+        final displayFilename = _tryDecodeMojibake(attachment.originalFilename);
         
+        // 오류 표시가 포함된 경우 텍스트 색상 변경
+        final bool hasDisplayError = displayFilename.endsWith('(표시 오류)');
+        final TextStyle titleStyle = TextStyle(
+          fontSize: 14,
+          color: hasDisplayError ? Colors.red : null, // 오류 시 빨간색
+          fontStyle: hasDisplayError ? FontStyle.italic : null,
+        );
+
         return ListTile(
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (attachment.id != null)
-                Checkbox(
-                  value: isSelected,
-                  onChanged: (checked) => _handleCheckboxChanged(attachment.id!, checked),
-                ),
-              Icon(
-                attachment.getFileIcon(),
-                size: 28,
-                color: Colors.blue.shade700,
-              ),
-            ],
+          leading: Checkbox(
+            value: isSelected,
+            onChanged: (bool? value) {
+              if (attachment.id != null) {
+                 _handleCheckboxChanged(attachment.id!, value);
+              }
+            },
           ),
           title: Text(
-            filename, // 디코딩된 파일명 표시
-            style: const TextStyle(fontSize: 14),
+            displayFilename, // 복구 시도/오류 표시된 파일명
+            style: titleStyle, // 스타일 적용
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            '${attachment.getFormattedSize()} · ${dateFormat.format(attachment.uploadDate)}',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
+            '${attachment.getFormattedSize()}  ·  ${dateFormat.format(attachment.uploadDate)}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                icon: const Icon(Icons.download, size: 20),
+                icon: const Icon(Icons.download, color: Colors.blue),
                 tooltip: '다운로드',
                 onPressed: () => _downloadFile(attachment),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20),
+                icon: Icon(Icons.delete_outline, color: Colors.red[400]),
                 tooltip: '삭제',
                 onPressed: () => _deleteFile(attachment),
               ),
             ],
           ),
-          dense: true,
         );
       },
     );

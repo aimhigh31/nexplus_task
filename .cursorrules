@@ -8,6 +8,7 @@ const flutterBestPractices = [
     "Implement proper error handling",
     "Follow platform-specific design guidelines",
     "Use proper localization techniques",
+    "Always use UTF-8 encoding for all file operations and text processing",
 ];
 
 
@@ -24,6 +25,7 @@ const codingGuidelines = `
 8. Implement proper dependency injection using GetIt
 9. Use proper asset management
 10. Follow proper testing practices
+11. Ensure UTF-8 encoding for all file operations and API communications
 `;
 
 // Widget Guidelines
@@ -72,6 +74,7 @@ const projectArchitecture = `
 4. 데이터 모델은 lib/models/ 디렉토리에 [feature]_model.dart 형식으로 생성
 5. 상태 관리는 Provider 패턴 또는 Bloc 패턴 일관되게 사용
 6. 모든 비즈니스 로직은 서비스 레이어에서 처리
+7. 모든 파일과 텍스트 처리는 UTF-8 인코딩 사용
 `;
 
 // 공통 컴포넌트 가이드라인
@@ -104,6 +107,8 @@ const apiCommunication = `
 3. API 요청 결과는 적절한 모델 클래스로 변환하여 반환
 4. 모든 API 에러는 통일된 에러 핸들링 메커니즘 사용
 5. 캐싱이 필요한 데이터는 local_storage_service.dart 활용
+6. 모든 HTTP 헤더에 'Accept-Charset: UTF-8' 포함
+7. 파일 업로드/다운로드 시 항상 UTF-8 인코딩 적용
 `;
 
 // 스타일 가이드라인
@@ -175,4 +180,17 @@ const backendIntegrationGuidelines = `
 3. API 요청 타임아웃과 재시도 정책 일관되게 적용
 4. 네트워크 상태에 따른 오프라인 모드 지원 고려
 5. 대량 데이터는 페이지네이션 구현으로 효율적 로딩
+6. 모든 데이터 인코딩/디코딩에 UTF-8 사용
+`;
+
+// 파일 및 인코딩 가이드라인 추가
+const fileAndEncodingGuidelines = `
+1. 모든 파일 처리는 UTF-8 인코딩 사용
+2. 한글/다국어 파일명 처리 시 URI 인코딩/디코딩 적용
+3. API 요청/응답에서 Content-Type 헤더에 charset=utf-8 명시
+4. 파일 업로드 시 multipart/form-data와 함께 UTF-8 인코딩 적용
+5. 파일 다운로드 시 Content-Disposition 헤더의 filename* 필드 사용 (RFC 5987)
+6. 텍스트 파일 읽기/쓰기 시 항상 UTF-8 인코딩 명시
+7. JSON 직렬화/역직렬화 시 UTF-8 인코딩 유지
+8. 로컬 스토리지 저장 시 UTF-8 인코딩된 문자열 사용
 `;
