@@ -433,7 +433,7 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
       // 헤더 추가
       for (var i = 0; i < headers.length; i++) {
         final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
-        cell.value = TextCellValue(headers[i]);
+        cell.value = headers[i];
         cell.cellStyle = headerStyle;
       }
 
@@ -447,64 +447,64 @@ class _HardwareManagementPageState extends State<HardwareManagementPage> with Ti
         final rowIndex = i + 1;
 
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex))
-            .value = TextCellValue(data.no.toString());
+            .value = data.no.toString();
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: rowIndex))
-            .value = TextCellValue(dateFormat.format(data.regDate));
+            .value = dateFormat.format(data.regDate);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: rowIndex))
-            .value = TextCellValue(data.code ?? '');
+            .value = data.code ?? '';
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: rowIndex))
-            .value = TextCellValue(data.assetCode);
+            .value = data.assetCode;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: rowIndex))
-            .value = TextCellValue(data.assetType ?? '');
+            .value = data.assetType ?? '';
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: rowIndex))
-            .value = TextCellValue(data.assetName);
+            .value = data.assetName;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rowIndex))
-            .value = TextCellValue(data.specification);
+            .value = data.specification;
         
         // 단가 필드 - null 처리
         final unitPrice = data.unitPrice ?? 0.0;
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: rowIndex))
-            .value = TextCellValue(numberFormat.format(unitPrice));
+            .value = numberFormat.format(unitPrice);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rowIndex))
-            .value = TextCellValue(data.quantity.toString());
+            .value = data.quantity.toString();
         
         // 금액 필드 - null 처리
         final totalPrice = unitPrice * data.quantity;
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: rowIndex))
-            .value = TextCellValue(numberFormat.format(totalPrice));
+            .value = numberFormat.format(totalPrice);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: rowIndex))
-            .value = TextCellValue(data.executionType);
+            .value = data.executionType;
         
         // 구매일 필드 - null 처리
         final purchaseDateStr = data.purchaseDate != null 
             ? dateFormat.format(data.purchaseDate!) 
             : '';
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: rowIndex))
-            .value = TextCellValue(purchaseDateStr);
+            .value = purchaseDateStr;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 12, rowIndex: rowIndex))
-            .value = TextCellValue(data.serialNumber ?? '');
+            .value = data.serialNumber ?? '';
         
         // 무상보증일 필드 - null 처리
         final warrantyDateStr = data.warrantyDate != null 
             ? dateFormat.format(data.warrantyDate!) 
             : '';
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 13, rowIndex: rowIndex))
-            .value = TextCellValue(warrantyDateStr);
+            .value = warrantyDateStr;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 14, rowIndex: rowIndex))
-            .value = TextCellValue(data.currentUser ?? '');
+            .value = data.currentUser ?? '';
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 15, rowIndex: rowIndex))
-            .value = TextCellValue(data.remarks);
+            .value = data.remarks;
       }
 
       // 열 너비 자동 조정

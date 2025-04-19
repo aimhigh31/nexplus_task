@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:pluto_grid_plus/pluto_grid_plus.dart';
 import 'package:intl/intl.dart';
 import '../models/voc_model.dart';
-import '../services/api_service.dart';
+import '../services/api/voc_service.dart';
+import '../services/service_locator.dart';
 import 'dashboard_page.dart'; // VOC 대시보드 사용
 import 'dart:async';
 import 'package:excel/excel.dart' hide Border, BorderStyle;
@@ -21,7 +22,7 @@ class SystemVocPage extends StatefulWidget {
 
 class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateMixin {
   late TabController _tabController;
-  final ApiService _apiService = ApiService();
+  final VocService _vocService = serviceLocator<VocService>();
 
   final List<String> _vocTabs = ['데이터 관리', '종합현황']; // 탭 이름 수정
 
@@ -102,7 +103,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
     setState(() { _isLoading = true; });
 
     try {
-      final vocData = await _apiService.getVocData(
+      final vocData = await _vocService.getVocData(
         search: _searchController.text.isNotEmpty ? _searchController.text : null,
         vocCategory: _selectedVocCategory,
         requestType: _selectedRequestType,
@@ -348,10 +349,10 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
         VocModel? result;
         if (item.isSaved) {
           // 기존 데이터 업데이트
-          result = await _apiService.updateVoc(item);
+          result = await _vocService.updateVoc(item);
         } else {
           // 새 데이터 추가
-          result = await _apiService.addVoc(item);
+          result = await _vocService.addVoc(item);
         }
 
         if (result != null) {
@@ -416,7 +417,7 @@ class _SystemVocPageState extends State<SystemVocPage> with TickerProviderStateM
     // 실제 API 호출
     for (final code in codes) {
       try {
-        bool success = await _apiService.deleteVocByCode(code);
+        bool success = await _vocService.deleteVoc(code);
         if (success) {
           successCount++;
           _vocData.removeWhere((d) => d.code == code);

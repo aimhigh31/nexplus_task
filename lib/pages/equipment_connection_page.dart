@@ -13,7 +13,8 @@ import 'package:pluto_grid_plus/pluto_grid_plus.dart' hide Border;
 import 'package:excel/excel.dart' hide Border;
 
 import '../models/equipment_connection_model.dart';
-import '../services/api_service.dart';
+import '../services/api/equipment_connection_service.dart';
+import '../services/service_locator.dart';
 import '../widgets/data_table_widget.dart';
 
 // 설비 연동관리 페이지
@@ -80,8 +81,8 @@ class EquipmentConnectionDataPage extends StatefulWidget {
 }
 
 class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPage> {
-  // API 서비스
-  final ApiService _apiService = ApiService();
+  // 설비 연동 서비스
+  final EquipmentConnectionService _equipmentConnectionService = serviceLocator<EquipmentConnectionService>();
   
   // 설비 연동 데이터
   List<EquipmentConnectionModel> _connectionData = [];
@@ -96,7 +97,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   int _currentPage = 1;
   int _totalPages = 1;
   int _totalItems = 0;
-  final int _rowsPerPage = 20;
+  final int _rowsPerPage = 12;
   
   // 필터 상태
   final TextEditingController _searchController = TextEditingController();
@@ -122,7 +123,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   bool _isLoading = false;
   bool _hasSelectedItems = false;
   bool _unsavedChanges = false;
-  
+
   // 행 키로 설비 연동 데이터 찾기
   EquipmentConnectionModel? _findEquipmentConnectionByRowKey(String rowKey) {
     final index = _connectionData.indexWhere((item) => item.code == rowKey);
@@ -136,8 +137,8 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   Future<bool> _saveEquipmentConnection(EquipmentConnectionModel connection) async {
     try {
       final result = connection.isNew
-          ? await _apiService.addEquipmentConnection(connection)
-          : await _apiService.updateEquipmentConnection(connection);
+          ? await _equipmentConnectionService.addEquipmentConnection(connection)
+          : await _equipmentConnectionService.updateEquipmentConnection(connection);
       
       if (result != null) {
         final index = _connectionData.indexWhere((item) => item.code == connection.code);
@@ -373,16 +374,14 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     
     setState(() { 
       _isLoading = true; 
-      // 초기 데이터 로딩일 경우 데이터를 비우지 않고 로딩 표시만 함
-      // _connectionData.clear(); // 이 줄을 주석 처리하여 깜빡임 방지
     });
     
     _debounce = Timer(const Duration(milliseconds: 500), () async {
       try {
         debugPrint('설비 연동 데이터 로드 시작');
         
-        // API 호출
-        final data = await _apiService.fetchEquipmentConnections(
+        // 서비스 호출
+        final data = await _equipmentConnectionService.getEquipmentConnections(
           search: _searchController.text.isNotEmpty ? _searchController.text : null,
           line: _selectedLine,
           equipment: _selectedEquipment,
@@ -407,9 +406,10 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
             _equipments = _extractUniqueValues(data, (item) => item.equipment);
             
             _isLoading = false;
+            _unsavedChanges = false; // 새로 로드된 데이터는 변경사항 없음으로 초기화
           });
           
-          debugPrint('설비 연동 데이터 로드 완료: ${data.length}개 항목');
+          debugPrint('설비 연동 데이터 로드 완료: ${data.length}개 항목, _unsavedChanges=$_unsavedChanges');
           // 데이터가 준비된 후 그리드 새로고침
           _refreshGrid();
         }
@@ -441,7 +441,12 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
       return [];
     }
     
-    final displayData = _connectionData.sublist(startIdx, endIdx);
+    // 데이터를 no 필드 기준으로 내림차순 정렬
+    final sortedData = List<EquipmentConnectionModel>.from(_connectionData);
+    sortedData.sort((a, b) => b.no.compareTo(a.no));
+    
+    // 정렬된 데이터에서 현재 페이지에 해당하는 부분 가져오기
+    final displayData = sortedData.sublist(startIdx, endIdx);
     
     return displayData.map((item) => PlutoRow(cells: {
       'selected': PlutoCell(value: _selectedConnectionCodes.contains(item.code) ? 'true' : 'false'),
@@ -462,62 +467,114 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
   }
   
   // 셀 값 변경 처리
-  Future<void> _handleCellChanged(PlutoGridOnChangedEvent event) async {
-    // 셀 값을 즉시 UI에 반영
-    event.row.cells[event.column.field]!.value = event.value;
+  void _handleCellChanged(PlutoGridOnChangedEvent event) {
+    // 해당 셀에 대한 데이터 모델 찾기
+    final rowIdx = event.rowIdx;
     
-    // 변경된 행 데이터 찾기
-    final rowKey = event.row.cells['code']!.value.toString();
-    final connectionIndex = _connectionData.indexWhere((item) => item.code == rowKey);
-    if (connectionIndex < 0) return;
+    if (rowIdx < 0 || rowIdx >= _connectionData.length) {
+      debugPrint('행 인덱스가 범위를 벗어났습니다: $rowIdx, 전체 행 수: ${_connectionData.length}');
+      return;
+    }
     
-    final rowData = _connectionData[connectionIndex];
-
-    // 변경된 필드에 따라 데이터 업데이트 (copyWith 사용)
-    EquipmentConnectionModel updatedData;
-    switch (event.column.field) {
+    // 변경된 데이터의 모델 참조 가져오기
+    final currentConnection = _connectionData[rowIdx];
+    
+    // 변경된 필드 확인 및 업데이트
+    final field = event.column.field;
+    final newValue = event.value;
+    
+    debugPrint('셀 변경: 필드=$field, 새 값=$newValue, 행 인덱스=$rowIdx');
+    
+    // copyWith를 사용하여 새 객체 생성 (불변 객체 패턴)
+    EquipmentConnectionModel updatedConnection;
+    
+    // 필드에 따라 다른 처리
+    switch (field) {
       case 'line':
-        updatedData = rowData.copyWith(line: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          line: newValue.toString(),
+          isModified: true
+        );
         break;
       case 'equipment':
-        updatedData = rowData.copyWith(equipment: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          equipment: newValue.toString(),
+          isModified: true
+        );
         break;
       case 'workType':
-        updatedData = rowData.copyWith(workType: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          workType: newValue.toString(),
+          isModified: true
+        );
         break;
       case 'dataType':
-        updatedData = rowData.copyWith(dataType: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          dataType: newValue.toString(),
+          isModified: true
+        );
         break;
       case 'connectionType':
-        updatedData = rowData.copyWith(connectionType: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          connectionType: newValue.toString(),
+          isModified: true
+        );
         break;
       case 'status':
-        updatedData = rowData.copyWith(status: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          status: newValue.toString(),
+          isModified: true
+        );
         break;
       case 'detail':
-        updatedData = rowData.copyWith(detail: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          detail: newValue.toString(),
+          isModified: true
+        );
         break;
       case 'startDate':
-        updatedData = rowData.copyWith(startDate: event.value is DateTime ? event.value : null, isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          startDate: newValue is DateTime ? newValue : null,
+          isModified: true
+        );
         break;
       case 'completionDate':
-        updatedData = rowData.copyWith(completionDate: event.value is DateTime ? event.value : null, isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          completionDate: newValue is DateTime ? newValue : null,
+          isModified: true
+        );
         break;
       case 'remarks':
-        updatedData = rowData.copyWith(remarks: event.value.toString(), isModified: true);
+        updatedConnection = currentConnection.copyWith(
+          remarks: newValue.toString(),
+          isModified: true
+        );
         break;
       default:
-        return; // 수정 가능한 필드가 아니면 무시
+        debugPrint('알 수 없는 필드: $field');
+        return; // 알 수 없는 필드인 경우 변경하지 않음
     }
-
-    // 업데이트된 데이터로 배열 갱신
-    setState(() {
-      _connectionData[connectionIndex] = updatedData;
-      _unsavedChanges = true;
-    });
-
-    // 그리드 상태 관리자에게 변경 알림 (UI 새로고침)
-    _gridStateManager?.notifyListeners();
+    
+    // 배열에 업데이트된 모델 저장
+    _connectionData[rowIdx] = updatedConnection;
+    
+    // 변경 내용 적용 (그리드 상태 관리자에 알림)
+    if (_gridStateManager != null) {
+      _gridStateManager!.notifyListeners();
+    }
+    
+    // 변경 상태 업데이트 - 단일 상태 업데이트로 통합
+    if (!_unsavedChanges) {
+      // 한 프레임 후에 안전하게 상태 업데이트
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _unsavedChanges = true;
+            debugPrint('변경 상태가 true로 설정됨');
+          });
+        }
+      });
+    }
   }
   
   // 그리드 새로고침
@@ -599,7 +656,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     for (final item in modifiedData) {
       try {
         if (item.isNew) {
-          final result = await _apiService.addEquipmentConnection(item);
+          final result = await _equipmentConnectionService.addEquipmentConnection(item);
           if (result != null) {
             final index = _connectionData.indexWhere((e) => e.code == item.code);
             if (index != -1) {
@@ -610,7 +667,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
             failedCount++;
           }
         } else {
-          final result = await _apiService.updateEquipmentConnection(item);
+          final result = await _equipmentConnectionService.updateEquipmentConnection(item);
           if (result != null) {
             final index = _connectionData.indexWhere((e) => e.code == item.code);
             if (index != -1) {
@@ -645,16 +702,17 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     }
   }
   
-  // 선택 항목 삭제
-  Future<void> _deleteSelectedItems() async {
+  // 선택된 데이터 삭제
+  Future<void> _deleteSelectedData() async {
     if (_selectedConnectionCodes.isEmpty) return;
     
-    // 삭제 확인 다이얼로그
+    final count = _selectedConnectionCodes.length;
+    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('삭제 확인'),
-        content: Text('${_selectedConnectionCodes.length}개 항목을 삭제하시겠습니까?'),
+        title: Text('선택한 ${count}개 항목 삭제'),
+        content: Text('선택한 $count개 설비 연동 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -667,50 +725,48 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
           ),
         ],
       ),
-    );
+    ) ?? false;
     
-    if (confirmed != true) return;
+    if (!confirmed) return;
     
     setState(() { _isLoading = true; });
     
-    int deletedCount = 0;
-    int failedCount = 0;
+    int success = 0;
+    int failed = 0;
     
-    for (final code in _selectedConnectionCodes.toList()) {
+    // 코드 목록 복사 (비동기 처리 중 변경 방지)
+    final List<String> codesToDelete = _selectedConnectionCodes.toList();
+    
+    for (final code in codesToDelete) {
       try {
-        final success = await _apiService.deleteEquipmentConnection(code);
-        if (success) {
-          _connectionData.removeWhere((item) => item.code == code);
+        final result = await _equipmentConnectionService.deleteEquipmentConnection(code);
+        if (result) {
+          success++;
+          // 성공적으로 삭제된 항목 제거
           _selectedConnectionCodes.remove(code);
-          deletedCount++;
         } else {
-          failedCount++;
+          failed++;
         }
       } catch (e) {
         debugPrint('설비 연동 데이터 삭제 오류: $e');
-        failedCount++;
+        failed++;
       }
     }
     
+    // 목록 다시 로드
+    await _loadConnectionData();
+    
+    setState(() {
+      _hasSelectedItems = _selectedConnectionCodes.isNotEmpty;
+      _isLoading = false;
+    });
+    
+    // 결과 메시지 표시
     if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _hasSelectedItems = _selectedConnectionCodes.isNotEmpty;
-        _totalPages = math.max(1, (_connectionData.length / _rowsPerPage).ceil());
-        if (_currentPage > _totalPages && _totalPages > 0) {
-          _currentPage = _totalPages;
-        }
-      });
-      
-      if (deletedCount > 0) {
-        debugPrint('설비 연동 데이터 삭제 성공: $deletedCount개');
-      }
-      
-      if (failedCount > 0) {
-        debugPrint('설비 연동 데이터 삭제 실패: $failedCount개');
-      }
-      
-      _refreshGrid();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('삭제 결과: $success개 성공, $failed개 실패'),
+        backgroundColor: success > 0 ? Colors.green : Colors.orange,
+      ));
     }
   }
 
@@ -1011,7 +1067,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
       // 헤더 추가
       for (var i = 0; i < headers.length; i++) {
         final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
-        cell.value = TextCellValue(headers[i]);
+        cell.value = headers[i];
         cell.cellStyle = headerStyle;
       }
 
@@ -1025,60 +1081,60 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
         
         // 등록일
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex))
-            .value = TextCellValue(dateFormat.format(data.regDate));
+            .value = dateFormat.format(data.regDate);
         
         // 코드
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: rowIndex))
-            .value = TextCellValue(data.code ?? '');
+            .value = data.code ?? '';
         
         // 라인
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: rowIndex))
-            .value = TextCellValue(data.line);
+            .value = data.line;
         
         // 설비
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: rowIndex))
-            .value = TextCellValue(data.equipment);
+            .value = data.equipment;
         
         // 작업유형
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: rowIndex))
-            .value = TextCellValue(data.workType);
+            .value = data.workType;
         
         // 데이터유형
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: rowIndex))
-            .value = TextCellValue(data.dataType);
+            .value = data.dataType;
         
         // 연동유형
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rowIndex))
-            .value = TextCellValue(data.connectionType);
+            .value = data.connectionType;
         
         // 상태
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: rowIndex))
-            .value = TextCellValue(data.status);
+            .value = data.status;
         
         // 세부내용
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rowIndex))
-            .value = TextCellValue(data.detail);
+            .value = data.detail;
         
         // 시작일
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: rowIndex))
             .value = data.startDate != null 
-                ? TextCellValue(dateFormat.format(data.startDate!))
-                : TextCellValue('');
+                ? dateFormat.format(data.startDate!)
+                : '';
         
         // 완료일
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: rowIndex))
             .value = data.completionDate != null 
-                ? TextCellValue(dateFormat.format(data.completionDate!))
-                : TextCellValue('');
+                ? dateFormat.format(data.completionDate!)
+                : '';
         
         // 비고
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: rowIndex))
-            .value = TextCellValue(data.remarks);
+            .value = data.remarks;
       }
 
       // 열 너비 자동 조정
       for (var i = 0; i < headers.length; i++) {
-        sheet.setColumnWidth(i, 15);
+        sheet.setColumnWidth(i, 15.0);
       }
 
       // 엑셀 파일 내보내기
@@ -1122,49 +1178,54 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
     }
   }
 
+  // 필터 위젯
+  Widget _buildFilterWidget() {
+    return EquipmentFilterWidget(
+      searchController: _searchController,
+      selectedLine: _selectedLine,
+      selectedEquipment: _selectedEquipment,
+      selectedStatus: _selectedStatus,
+      lines: _lines,
+      equipments: _equipments,
+      onLineChanged: (value) {
+        setState(() {
+          _selectedLine = value;
+          _currentPage = 1;
+        });
+        _loadConnectionData(); // setState 밖으로 이동하여 불필요한 리렌더링 방지
+      },
+      onEquipmentChanged: (value) {
+        setState(() {
+          _selectedEquipment = value;
+          _currentPage = 1;
+        });
+        _loadConnectionData(); // setState 밖으로 이동
+      },
+      onStatusChanged: (value) {
+        setState(() {
+          _selectedStatus = value;
+          _currentPage = 1;
+        });
+        _loadConnectionData(); // setState 밖으로 이동
+      },
+      onSearchChanged: () {
+        setState(() {
+          _currentPage = 1;
+        });
+        _loadConnectionData(); // setState 밖으로 이동
+      },
+    );
+  }
+
   // build 메서드 추가
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // 1. 필터 위젯
-        EquipmentFilterWidget(
-          searchController: _searchController,
-          selectedLine: _selectedLine,
-          selectedEquipment: _selectedEquipment,
-          selectedStatus: _selectedStatus,
-          lines: _lines,
-          equipments: _equipments,
-          onLineChanged: (value) {
-            setState(() {
-              _selectedLine = value;
-              _currentPage = 1;
-            });
-            _loadConnectionData(); // setState 밖으로 이동하여 불필요한 리렌더링 방지
-          },
-          onEquipmentChanged: (value) {
-            setState(() {
-              _selectedEquipment = value;
-              _currentPage = 1;
-            });
-            _loadConnectionData(); // setState 밖으로 이동
-          },
-          onStatusChanged: (value) {
-            setState(() {
-              _selectedStatus = value;
-              _currentPage = 1;
-            });
-            _loadConnectionData(); // setState 밖으로 이동
-          },
-          onSearchChanged: () {
-            setState(() {
-              _currentPage = 1;
-            });
-            _loadConnectionData(); // setState 밖으로 이동
-          },
-        ),
+        // 필터 위젯
+        _buildFilterWidget(),
         
-        // 2. 실행 버튼 위젯
+        // 실행 버튼 위젯
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
@@ -1175,8 +1236,11 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
                   hasUnsavedChanges: _unsavedChanges,
                   isAdmin: true,
                   onAddRow: _addNewConnection,
-                  onSaveChanges: _saveChanges,
-                  onDeleteSelected: _deleteSelectedItems,
+                  onSaveChanges: () {
+                    debugPrint('저장 버튼 클릭: _unsavedChanges=$_unsavedChanges');
+                    _saveChanges();
+                  },
+                  onDeleteSelected: _deleteSelectedData,
                   onExportExcel: _exportToExcel,
                   onImportExcel: _showAdminPasswordDialog,
                   totalItems: _connectionData.length,
@@ -1188,7 +1252,7 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
           ),
         ),
         
-        // 3. 데이터 테이블 및 범례
+        // 데이터 테이블 및 범례
         Expanded(
           child: _isLoading 
             ? const Center(
@@ -1211,9 +1275,13 @@ class _EquipmentConnectionDataPageState extends State<EquipmentConnectionDataPag
                     currentPage: _currentPage - 1, // CommonDataTableWidget은 0부터 시작하므로 1을 빼줍니다
                     totalPages: _totalPages,
                     hasUnsavedChanges: _unsavedChanges,
-                    onChanged: _handleCellChanged,
+                    onChanged: (event) {
+                      debugPrint('CommonDataTableWidget onChanged 호출됨');
+                      _handleCellChanged(event);
+                    },
                     onPageChanged: (page) => _changePage(page + 1), // 페이지 번호에 1을 더해 _changePage 호출
                     onLoaded: (PlutoGridOnLoadedEvent event) {
+                      debugPrint('CommonDataTableWidget onLoaded 호출됨');
                       _gridStateManager = event.stateManager;
                       event.stateManager.setSelectingMode(PlutoGridSelectingMode.row);
                       
@@ -1403,6 +1471,7 @@ class ActionButtonsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('ActionButtonsWidget build: hasUnsavedChanges=$hasUnsavedChanges');
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1447,14 +1516,16 @@ class ActionButtonsWidget extends StatelessWidget {
               onPressed: hasUnsavedChanges ? onSaveChanges : null,
               icon: Icon(Icons.save, color: hasUnsavedChanges ? Colors.yellow : Colors.white),
               label: Text(
-                '데이터 저장${hasUnsavedChanges ? ' *' : ''}',
+                hasUnsavedChanges ? '데이터 저장 *' : '데이터 저장',
                 style: TextStyle(
                   fontWeight: hasUnsavedChanges ? FontWeight.bold : FontWeight.normal,
+                  color: Colors.white
                 ),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: hasUnsavedChanges ? Colors.blue.shade700 : null,
-                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade200,
+                disabledForegroundColor: Colors.grey.shade400,
               ),
             ),
             const SizedBox(width: 8),
@@ -1463,11 +1534,12 @@ class ActionButtonsWidget extends StatelessWidget {
             ElevatedButton.icon(
               onPressed: hasSelection ? onDeleteSelected : null,
               icon: const Icon(Icons.delete_outline),
-              label: const Text('행 삭제'),
+              label: Text('행 삭제${hasSelection ? ' (${totalItems})' : ''}'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
                 disabledBackgroundColor: Colors.red.withOpacity(0.3),
+                disabledForegroundColor: Colors.white
               ),
             ),
             const SizedBox(width: 8),
@@ -1475,8 +1547,8 @@ class ActionButtonsWidget extends StatelessWidget {
             // 엑셀 내보내기 버튼
             ElevatedButton.icon(
               onPressed: onExportExcel,
-              icon: const Icon(Icons.file_download),
-              label: const Text('엑셀 다운로드'),
+              icon: const Icon(Icons.file_download, color: Colors.white),
+              label: const Text('엑셀 다운로드', style: TextStyle(color: Colors.white)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
@@ -1488,8 +1560,8 @@ class ActionButtonsWidget extends StatelessWidget {
               // 엑셀 가져오기 버튼 (관리자만)
               ElevatedButton.icon(
                 onPressed: onImportExcel,
-                icon: const Icon(Icons.file_upload),
-                label: const Text('엑셀 업로드'),
+                icon: const Icon(Icons.file_upload, color: Colors.white),
+                label: const Text('엑셀 업로드', style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,

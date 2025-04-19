@@ -649,6 +649,123 @@ app.delete('/api/memory/equipment-connections/code/:code', (req, res) => {
   });
 });
 
+// MongoDB 직접 접근 API 추가
+// MongoDB 라우트 - 컬렉션에서 문서 찾기
+app.post('/api/mongodb/:collection/find', async (req, res) => {
+  try {
+    const collectionName = req.params.collection;
+    const { filter = {} } = req.body;
+    
+    console.log(`MongoDB 컬렉션 ${collectionName} 조회 요청`, { filter });
+
+    // 컬렉션 접근
+    const collection = mongoose.connection.db.collection(collectionName);
+    if (!collection) {
+      return res.status(404).json({ error: `컬렉션 ${collectionName}을 찾을 수 없습니다.` });
+    }
+    
+    // 데이터 조회
+    const result = await collection.find(filter).toArray();
+    console.log(`MongoDB ${collectionName} 검색 결과: ${result.length}개 문서`);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('MongoDB 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MongoDB 라우트 - 문서 추가
+app.post('/api/mongodb/:collection/insertOne', async (req, res) => {
+  try {
+    const collectionName = req.params.collection;
+    const { document = {} } = req.body;
+    
+    console.log(`MongoDB 컬렉션 ${collectionName}에 문서 추가 요청`);
+
+    // 컬렉션 접근
+    const collection = mongoose.connection.db.collection(collectionName);
+    if (!collection) {
+      return res.status(404).json({ error: `컬렉션 ${collectionName}을 찾을 수 없습니다.` });
+    }
+    
+    // 문서 추가
+    const result = await collection.insertOne(document);
+    console.log(`MongoDB ${collectionName}에 문서 추가 성공: ID=${result.insertedId}`);
+    
+    res.status(201).json({ 
+      _id: result.insertedId,
+      acknowledged: result.acknowledged,
+      insertedId: result.insertedId 
+    });
+  } catch (error) {
+    console.error('MongoDB 문서 추가 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MongoDB 라우트 - 문서 수정
+app.post('/api/mongodb/:collection/updateOne', async (req, res) => {
+  try {
+    const collectionName = req.params.collection;
+    const { filter = {}, update = {} } = req.body;
+    
+    console.log(`MongoDB 컬렉션 ${collectionName} 문서 수정 요청`, { filter });
+
+    // 컬렉션 접근
+    const collection = mongoose.connection.db.collection(collectionName);
+    if (!collection) {
+      return res.status(404).json({ error: `컬렉션 ${collectionName}을 찾을 수 없습니다.` });
+    }
+    
+    // 문서 수정
+    const result = await collection.updateOne(filter, update);
+    console.log(`MongoDB ${collectionName} 문서 수정 결과:`, {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount
+    });
+    
+    res.json({
+      acknowledged: result.acknowledged,
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error('MongoDB 문서 수정 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MongoDB 라우트 - 문서 삭제
+app.post('/api/mongodb/:collection/deleteOne', async (req, res) => {
+  try {
+    const collectionName = req.params.collection;
+    const { filter = {} } = req.body;
+    
+    console.log(`MongoDB 컬렉션 ${collectionName} 문서 삭제 요청`, { filter });
+
+    // 컬렉션 접근
+    const collection = mongoose.connection.db.collection(collectionName);
+    if (!collection) {
+      return res.status(404).json({ error: `컬렉션 ${collectionName}을 찾을 수 없습니다.` });
+    }
+    
+    // 문서 삭제
+    const result = await collection.deleteOne(filter);
+    console.log(`MongoDB ${collectionName} 문서 삭제 결과:`, {
+      deletedCount: result.deletedCount
+    });
+    
+    res.json({
+      acknowledged: result.acknowledged,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('MongoDB 문서 삭제 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 루트 라우트
 app.get('/', (req, res) => {
   res.json({ message: "NextPlus Task API가 실행 중입니다." });
@@ -729,24 +846,43 @@ const initMongoDB = async () => {
       
       // 설비 연동관리 샘플 데이터 초기화 - connection 컬렉션 사용
       try {
+        console.log('설비 연동관리 데이터 초기화 시작...');
+        
+        // 데이터베이스 연결 확인
+        const dbName = mongoose.connection.db.databaseName;
+        console.log(`현재 연결된 데이터베이스: ${dbName}`);
+        
+        // 필요시 asset_management 데이터베이스로 전환
+        let db = mongoose.connection.db;
+        if (dbName !== 'asset_management') {
+          console.log('asset_management 데이터베이스로 전환 시도...');
+          db = mongoose.connection.useDb('asset_management');
+          console.log('asset_management 데이터베이스로 전환 완료');
+        }
+        
         // 설비 연동관리 컬렉션이 존재하는지 확인
-        const collections = await mongoose.connection.db.listCollections({ name: 'connection' }).toArray();
+        const collections = await db.listCollections({ name: 'connection' }).toArray();
         if (collections.length === 0) {
           console.log('connection 컬렉션이 없습니다. 컬렉션을 생성합니다.');
-          await mongoose.connection.db.createCollection('connection');
+          await db.createCollection('connection');
           console.log('connection 컬렉션이 성공적으로 생성되었습니다.');
           
           // 필요한 인덱스 생성
-          const connectionCollection = mongoose.connection.db.collection('connection');
+          const connectionCollection = db.collection('connection');
           await connectionCollection.createIndex({ 'code': 1 }, { unique: true });
           await connectionCollection.createIndex({ 'line': 1 });
           await connectionCollection.createIndex({ 'equipment': 1 });
           await connectionCollection.createIndex({ 'status': 1 });
           console.log('connection 컬렉션 인덱스 생성 완료.');
+        } else {
+          console.log('connection 컬렉션이 이미 존재합니다.');
         }
         
+        // 직접 컬렉션 접근
+        const connectionCollection = db.collection('connection');
+        
         // 데이터 초기화
-        const equipmentConnectionCount = await EquipmentConnection.countDocuments();
+        const equipmentConnectionCount = await connectionCollection.countDocuments();
         console.log(`현재 connection 컬렉션의 데이터 수: ${equipmentConnectionCount}`);
         
         if (equipmentConnectionCount === 0) {
@@ -758,35 +894,42 @@ const initMongoDB = async () => {
             console.log(`데이터 ${index + 1}: 코드=${item.code}, 라인=${item.line}, 설비=${item.equipment}, 상태=${item.status}`);
           });
           
-          const result = await EquipmentConnection.insertMany(sampleEquipmentConnectionData);
-          console.log(`설비 연동관리 ${result.length}개 데이터가 connection 컬렉션에 성공적으로 추가되었습니다.`);
+          // 직접 MongoDB 컬렉션에 삽입
+          const result = await connectionCollection.insertMany(sampleEquipmentConnectionData);
+          console.log(`설비 연동관리 ${result.insertedCount}개 데이터가 connection 컬렉션에 성공적으로 추가되었습니다.`);
         } else {
           console.log(`connection 컬렉션에 이미 ${equipmentConnectionCount}개의 데이터가 있습니다.`);
         }
         
         // 연결 및 데이터 확인 로깅
-        const verifyCount = await EquipmentConnection.countDocuments();
+        const verifyCount = await connectionCollection.countDocuments();
         console.log(`설비 연동관리 데이터 검증: connection 컬렉션에 ${verifyCount}개의 데이터가 있습니다.`);
         
       } catch (connectionError) {
         console.error('설비 연동관리 초기화 오류:', connectionError.message);
         console.log('설비 연동관리 초기화를 다시 시도합니다...');
         
-        // 컬렉션 삭제 후 재생성 시도
         try {
-          await mongoose.connection.db.dropCollection('connection');
-          console.log('기존 connection 컬렉션을 삭제했습니다.');
-        } catch (dropError) {
-          console.log('connection 컬렉션 삭제 실패 (존재하지 않을 수 있음):', dropError.message);
-        }
-        
-        try {
+          // asset_management 데이터베이스 연결
+          const assetManagementDB = mongoose.connection.useDb('asset_management');
+          
+          // 컬렉션 삭제 후 재생성 시도
+          try {
+            const hasCollection = await assetManagementDB.listCollections({ name: 'connection' }).toArray();
+            if (hasCollection.length > 0) {
+              await assetManagementDB.dropCollection('connection');
+              console.log('기존 connection 컬렉션을 삭제했습니다.');
+            }
+          } catch (dropError) {
+            console.log('connection 컬렉션 삭제 실패 (존재하지 않을 수 있음):', dropError.message);
+          }
+          
           // 컬렉션 생성
-          await mongoose.connection.db.createCollection('connection');
+          await assetManagementDB.createCollection('connection');
           console.log('connection 컬렉션을 새로 생성했습니다.');
           
           // 인덱스 생성
-          const connectionCollection = mongoose.connection.db.collection('connection');
+          const connectionCollection = assetManagementDB.collection('connection');
           await connectionCollection.createIndex({ 'code': 1 }, { unique: true });
           await connectionCollection.createIndex({ 'line': 1 });
           await connectionCollection.createIndex({ 'equipment': 1 });
@@ -796,22 +939,13 @@ const initMongoDB = async () => {
           // 샘플 데이터 생성
           const sampleEquipmentConnectionData = getSampleEquipmentConnectionData();
           
-          // 수동으로 각 문서 삽입
-          const insertResults = [];
-          for (const data of sampleEquipmentConnectionData) {
-            try {
-              const newConnection = new EquipmentConnection(data);
-              const result = await newConnection.save();
-              insertResults.push(result);
-              console.log(`데이터 추가 성공: ${data.code}`);
-            } catch (saveError) {
-              console.error(`데이터 저장 실패 (${data.code}): ${saveError.message}`);
-            }
-          }
+          // 직접 MongoDB 컬렉션에 삽입
+          const result = await connectionCollection.insertMany(sampleEquipmentConnectionData);
+          console.log(`설비 연동관리 ${result.insertedCount}개 데이터 초기화 성공!`);
           
-          console.log(`설비 연동관리 ${insertResults.length}개 데이터 초기화 성공!`);
         } catch (createError) {
           console.error('설비 연동관리 컬렉션 생성 오류:', createError.message);
+          console.error('설비 연동관리 데이터는 메모리에만 저장될 것입니다.');
         }
       }
       

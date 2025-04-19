@@ -137,11 +137,17 @@ class CommonDataTableWidget extends StatelessWidget {
   }
 
   Widget _buildDataTable() {
+    debugPrint('데이터 테이블 빌드: ${rows.length}행, onChanged ${onChanged != null ? '등록됨' : '미등록'}');
     return PlutoGrid(
       columns: columns,
       rows: rows,
       onLoaded: onLoaded,
-      onChanged: onChanged,
+      onChanged: (PlutoGridOnChangedEvent event) {
+        debugPrint('PlutoGrid 셀 변경 이벤트: ${event.column.field} = ${event.value}');
+        if (onChanged != null) {
+          onChanged!(event);
+        }
+      },
       onRowChecked: onRowChecked,
       configuration: PlutoGridConfiguration(
         style: PlutoGridStyleConfig(
@@ -168,6 +174,12 @@ class CommonDataTableWidget extends StatelessWidget {
           autoSizeMode: PlutoAutoSizeMode.none,
         ),
         enterKeyAction: PlutoGridEnterKeyAction.editingAndMoveDown,
+        columnFilter: PlutoGridColumnFilterConfig(
+          filters: const [
+            ...FilterHelper.defaultFilters,
+          ],
+          debounceMilliseconds: 300,
+        ),
       ),
     );
   }

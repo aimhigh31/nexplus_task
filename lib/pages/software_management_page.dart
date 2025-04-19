@@ -618,16 +618,16 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
       );
       
       // 헤더 추가
-      for (var i = 0; i < headers.length; i++) {
+      for (int i = 0; i < headers.length; i++) {
         final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0));
-        cell.value = TextCellValue(headers[i]);
+        cell.value = headers[i];
         cell.cellStyle = headerStyle;
       }
       
       // 데이터 추가
-      for (var i = 0; i < _softwareData.length; i++) {
+      for (int i = 0; i < _softwareData.length; i++) {
         final data = _softwareData[i];
-        List<dynamic> rowData = [
+        final rowData = [
           data.no,
           DateFormat('yyyy-MM-dd').format(data.regDate),
           data.code,
@@ -646,22 +646,18 @@ class _SoftwareManagementPageState extends State<SoftwareManagementPage> with Ti
           data.remarks,
         ];
         
-        for (var j = 0; j < rowData.length; j++) {
+        for (int j = 0; j < rowData.length; j++) {
           final cell = sheet.cell(CellIndex.indexByColumnRow(
             columnIndex: j,
             rowIndex: i + 1,
           ));
-          
-          if (rowData[j] is num) {
-            cell.value = IntCellValue(rowData[j] is int ? rowData[j] : rowData[j].toInt());
-          } else {
-            cell.value = TextCellValue(rowData[j].toString());
-          }
+          cell.value = rowData[j].toString();
+          cell.cellStyle = headerStyle;
         }
       }
 
-      // 자동 열 너비
-      for (var i = 0; i < headers.length; i++) {
+      // 열 너비 설정
+      for (int i = 0; i < headers.length; i++) {
         sheet.setColumnWidth(i, 15.0);
       }
       

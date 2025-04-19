@@ -1120,7 +1120,7 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
       // 헤더 추가
       for (var i = 0; i < headers.length; i++) {
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
-          ..value = TextCellValue(headers[i])
+          ..value = headers[i]
           ..cellStyle = headerStyle;
       }
 
@@ -1136,42 +1136,42 @@ class _SystemUpdatePageState extends State<SystemUpdatePage> with TickerProvider
         final attachmentCount = item.id != null ? _attachmentCounts[item.id] ?? 0 : 0;
 
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex))
-          .value = TextCellValue(item.no.toString());
+          .value = item.no.toString();
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: rowIndex))
-          .value = TextCellValue(dateFormat.format(item.regDate));
+          .value = dateFormat.format(item.regDate);
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: rowIndex))
-          .value = TextCellValue(item.updateCode ?? '');
+          .value = item.updateCode ?? '';
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: rowIndex))
-          .value = TextCellValue(item.targetSystem);
+          .value = item.targetSystem;
           
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: rowIndex))
-          .value = TextCellValue(item.developer);
+          .value = item.developer;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: rowIndex))
-          .value = TextCellValue(item.description);
+          .value = item.description;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: rowIndex))
-          .value = TextCellValue(item.updateType);
+          .value = item.updateType;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: rowIndex))
-          .value = TextCellValue(item.assignee);
+          .value = item.assignee;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: rowIndex))
-          .value = TextCellValue(item.status);
+          .value = item.status;
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: rowIndex))
-          .value = TextCellValue(item.completionDate != null 
+          .value = item.completionDate != null 
               ? dateFormat.format(item.completionDate!) 
-                : '');
+                : '';
                 
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: rowIndex))
-          .value = TextCellValue(attachmentCount.toString());
+          .value = attachmentCount.toString();
         
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: rowIndex))
-          .value = TextCellValue(item.remarks);
+          .value = item.remarks;
       }
 
       // 열 너비 자동 조정
